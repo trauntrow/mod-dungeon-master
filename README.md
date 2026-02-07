@@ -79,6 +79,9 @@ All settings are in `mod_dungeon_master.conf`.  Key settings:
 - **[AzerothCore-playerbots](https://github.com/liyunfan1223/azerothcore-wotlk)** — The playerbots fork used as the primary development target
 - **[mod-playerbots](https://github.com/liyunfan1223/mod-playerbots)** by liyunfan1223 — AI-controlled player bots for solo and small-group play
 
+## Donations
+
+https://ko-fi.com/trauntrow
 
 ## License
 
