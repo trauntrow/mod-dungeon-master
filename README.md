@@ -73,6 +73,13 @@ All settings are in `mod_dungeon_master.conf`.  Key settings:
 | `.dm clearcooldown` | GM | Clear cooldown for target |
 | `.dm reload` | Admin | Hot-reload configuration |
 
+## Credits
+
+- **[AzerothCore](https://github.com/azerothcore/azerothcore-wotlk)** — The open-source WoW 3.3.5a server emulator that makes this all possible
+- **[AzerothCore-playerbots](https://github.com/liyunfan1223/azerothcore-wotlk)** — The playerbots fork used as the primary development target
+- **[mod-playerbots](https://github.com/liyunfan1223/mod-playerbots)** by liyunfan1223 — AI-controlled player bots for solo and small-group play
+
+
 ## License
 
 AGPL 3.0 — see [LICENSE](LICENSE).
