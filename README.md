@@ -1,6 +1,6 @@
 # mod-dungeon-master
 
-A procedural dungeon challenge system for **AzerothCore** (WotLK 3.3.5a).
+A procedural dungeon challenge system for **AzerothCore** playerbots fork (WotLK 3.3.5a).
 
 Players interact with a Dungeon Master NPC to select a difficulty tier, creature theme, and dungeon instance.  They're teleported into a cleared dungeon repopulated with level-appropriate themed creatures and a boss.  Kill everything to earn gold and item rewards.
 
@@ -79,7 +79,7 @@ All settings are in `mod_dungeon_master.conf`.  Key settings:
 - **[AzerothCore-playerbots](https://github.com/liyunfan1223/azerothcore-wotlk)** — The playerbots fork used as the primary development target
 - **[mod-playerbots](https://github.com/liyunfan1223/mod-playerbots)** by liyunfan1223 — AI-controlled player bots for solo and small-group play
 
-## Donations
+## Tips
 
 https://ko-fi.com/trauntrow
 
