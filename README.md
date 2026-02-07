@@ -35,7 +35,7 @@ Players interact with a Dungeon Master NPC to select a difficulty tier, creature
 
 4. Copy the config file:
    ```
-   cp conf/mod_dungeon_master.conf.dist etc/mod_dungeon_master.conf
+   conf/mod_dungeon_master.conf.dist and change to conf/mod_dungeon_master.conf
    ```
 
 5. Restart the server.
