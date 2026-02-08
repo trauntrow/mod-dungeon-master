@@ -105,6 +105,7 @@ void DungeonMasterMgr::LoadFromDB()
     LoadClassLevelStats();
     LoadRewardItems();
     LoadLootPool();
+    LoadAllPlayerStats();
 }
 
 // ---------------------------------------------------------------------------
@@ -1098,6 +1099,13 @@ void DungeonMasterMgr::HandleCreatureDeath(Creature* creature, Session* session)
             GiveKillXP(session, sc.IsBoss, sc.IsElite);
             if (sc.IsBoss) { ++session->BossesKilled; HandleBossDeath(session); }
             else           { ++session->MobsKilled; }
+
+            // Credit all party members with the kill
+            for (auto& pd : session->Players)
+            {
+                if (sc.IsBoss) ++pd.BossesKilled;
+                else           ++pd.MobsKilled;
+            }
             break;
         }
     }
@@ -1548,6 +1556,11 @@ void DungeonMasterMgr::EndSession(uint32 sessionId, bool success)
     if (success && s.State == SessionState::Completed)
         DistributeRewards(&s);
 
+    // --- Persist stats & leaderboard ---
+    UpdatePlayerStatsFromSession(s, success);
+    if (success && s.State == SessionState::Completed)
+        SaveLeaderboardEntry(s);
+
     // NOTE: We intentionally do NOT despawn summoned creatures here.
     // The player may already be off the instance map, making GUID lookups
     // unreliable.  ClearDungeonCreatures() handles cleanup at the start
@@ -1606,6 +1619,218 @@ uint32 DungeonMasterMgr::GetRemainingCooldown(ObjectGuid g) const
 bool DungeonMasterMgr::CanCreateNewSession() const
 {
     return _activeSessions.size() < sDMConfig->GetMaxConcurrentRuns();
+}
+
+// ===========================================================================
+// Player Statistics & Leaderboard
+// ===========================================================================
+
+void DungeonMasterMgr::LoadAllPlayerStats()
+{
+    std::lock_guard<std::mutex> lock(_statsMutex);
+    _playerStats.clear();
+
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT guid, total_runs, completed_runs, failed_runs, "
+        "total_mobs_killed, total_bosses_killed, total_deaths, fastest_clear "
+        "FROM dm_player_stats");
+
+    if (!result)
+    {
+        LOG_INFO("module", "DungeonMaster: No player stats found (table may be empty or missing).");
+        return;
+    }
+
+    uint32 count = 0;
+    do
+    {
+        Field* f = result->Fetch();
+        uint32 guidLow = f[0].Get<uint32>();
+
+        PlayerStats ps;
+        ps.TotalRuns        = f[1].Get<uint32>();
+        ps.CompletedRuns    = f[2].Get<uint32>();
+        ps.FailedRuns       = f[3].Get<uint32>();
+        ps.TotalMobsKilled  = f[4].Get<uint32>();
+        ps.TotalBossesKilled = f[5].Get<uint32>();
+        ps.TotalDeaths      = f[6].Get<uint32>();
+        ps.FastestClear     = f[7].Get<uint32>();
+
+        _playerStats[guidLow] = ps;
+        ++count;
+    } while (result->NextRow());
+
+    LOG_INFO("module", "DungeonMaster: Loaded stats for {} players.", count);
+}
+
+PlayerStats DungeonMasterMgr::GetPlayerStats(ObjectGuid guid) const
+{
+    std::lock_guard<std::mutex> lock(_statsMutex);
+    uint32 guidLow = guid.GetCounter();
+    auto it = _playerStats.find(guidLow);
+    if (it != _playerStats.end())
+        return it->second;
+    return {};
+}
+
+void DungeonMasterMgr::SavePlayerStats(uint32 guidLow)
+{
+    PlayerStats ps;
+    {
+        std::lock_guard<std::mutex> lock(_statsMutex);
+        auto it = _playerStats.find(guidLow);
+        if (it == _playerStats.end()) return;
+        ps = it->second;
+    }
+
+    char query[512];
+    snprintf(query, sizeof(query),
+        "REPLACE INTO dm_player_stats "
+        "(guid, total_runs, completed_runs, failed_runs, "
+        "total_mobs_killed, total_bosses_killed, total_deaths, fastest_clear) "
+        "VALUES (%u, %u, %u, %u, %u, %u, %u, %u)",
+        guidLow, ps.TotalRuns, ps.CompletedRuns, ps.FailedRuns,
+        ps.TotalMobsKilled, ps.TotalBossesKilled, ps.TotalDeaths, ps.FastestClear);
+    CharacterDatabase.Execute(query);
+}
+
+void DungeonMasterMgr::UpdatePlayerStatsFromSession(const Session& session, bool success)
+{
+    uint32 clearTime = 0;
+    if (session.EndTime > session.StartTime)
+        clearTime = static_cast<uint32>(session.EndTime - session.StartTime);
+    else
+        clearTime = static_cast<uint32>(GameTime::GetGameTime().count() - session.StartTime);
+
+    for (const auto& pd : session.Players)
+    {
+        uint32 guidLow = pd.PlayerGuid.GetCounter();
+
+        {
+            std::lock_guard<std::mutex> lock(_statsMutex);
+            auto& ps = _playerStats[guidLow];
+            ps.TotalRuns++;
+            if (success)
+            {
+                ps.CompletedRuns++;
+                if (ps.FastestClear == 0 || clearTime < ps.FastestClear)
+                    ps.FastestClear = clearTime;
+            }
+            else
+                ps.FailedRuns++;
+
+            ps.TotalMobsKilled   += pd.MobsKilled;
+            ps.TotalBossesKilled += pd.BossesKilled;
+            ps.TotalDeaths       += pd.Deaths;
+        }
+
+        SavePlayerStats(guidLow);
+    }
+}
+
+void DungeonMasterMgr::SaveLeaderboardEntry(const Session& session)
+{
+    uint32 clearTime = 0;
+    if (session.EndTime > session.StartTime)
+        clearTime = static_cast<uint32>(session.EndTime - session.StartTime);
+    else
+        clearTime = static_cast<uint32>(GameTime::GetGameTime().count() - session.StartTime);
+
+    if (clearTime == 0) return;
+
+    // Get the leader's name for the leaderboard display
+    std::string leaderName = "Unknown";
+    if (Player* leader = ObjectAccessor::FindPlayer(session.LeaderGuid))
+        leaderName = leader->GetName();
+
+    uint8 partySize = static_cast<uint8>(session.Players.size());
+
+    // Escape the name to prevent SQL injection (replace ' with '')
+    std::string safeName = leaderName;
+    size_t pos = 0;
+    while ((pos = safeName.find('\'', pos)) != std::string::npos)
+    {
+        safeName.replace(pos, 1, "''");
+        pos += 2;
+    }
+
+    char query[512];
+    snprintf(query, sizeof(query),
+        "INSERT INTO dm_leaderboard "
+        "(guid, char_name, map_id, difficulty_id, clear_time, party_size, scaled) "
+        "VALUES (%u, '%s', %u, %u, %u, %u, %u)",
+        session.LeaderGuid.GetCounter(), safeName.c_str(),
+        session.MapId, session.DifficultyId, clearTime,
+        partySize, session.ScaleToParty ? 1u : 0u);
+    CharacterDatabase.Execute(query);
+}
+
+std::vector<LeaderboardEntry> DungeonMasterMgr::GetLeaderboard(
+    uint32 mapId, uint32 difficultyId, uint32 limit) const
+{
+    std::vector<LeaderboardEntry> entries;
+
+    char query[512];
+    snprintf(query, sizeof(query),
+        "SELECT id, guid, char_name, map_id, difficulty_id, clear_time, party_size, scaled "
+        "FROM dm_leaderboard "
+        "WHERE map_id = %u AND difficulty_id = %u "
+        "ORDER BY clear_time ASC LIMIT %u",
+        mapId, difficultyId, limit);
+
+    QueryResult result = CharacterDatabase.Query(query);
+
+    if (!result) return entries;
+
+    do
+    {
+        Field* f = result->Fetch();
+        LeaderboardEntry e;
+        e.Id           = f[0].Get<uint32>();
+        e.Guid         = f[1].Get<uint32>();
+        e.CharName     = f[2].Get<std::string>();
+        e.MapId        = f[3].Get<uint32>();
+        e.DifficultyId = f[4].Get<uint32>();
+        e.ClearTime    = f[5].Get<uint32>();
+        e.PartySize    = f[6].Get<uint8>();
+        e.Scaled       = f[7].Get<uint8>() != 0;
+        entries.push_back(e);
+    } while (result->NextRow());
+
+    return entries;
+}
+
+std::vector<LeaderboardEntry> DungeonMasterMgr::GetOverallLeaderboard(uint32 limit) const
+{
+    std::vector<LeaderboardEntry> entries;
+
+    char query[512];
+    snprintf(query, sizeof(query),
+        "SELECT id, guid, char_name, map_id, difficulty_id, clear_time, party_size, scaled "
+        "FROM dm_leaderboard "
+        "ORDER BY clear_time ASC LIMIT %u",
+        limit);
+
+    QueryResult result = CharacterDatabase.Query(query);
+
+    if (!result) return entries;
+
+    do
+    {
+        Field* f = result->Fetch();
+        LeaderboardEntry e;
+        e.Id           = f[0].Get<uint32>();
+        e.Guid         = f[1].Get<uint32>();
+        e.CharName     = f[2].Get<std::string>();
+        e.MapId        = f[3].Get<uint32>();
+        e.DifficultyId = f[4].Get<uint32>();
+        e.ClearTime    = f[5].Get<uint32>();
+        e.PartySize    = f[6].Get<uint8>();
+        e.Scaled       = f[7].Get<uint8>() != 0;
+        entries.push_back(e);
+    } while (result->NextRow());
+
+    return entries;
 }
 
 // ===========================================================================
@@ -1680,6 +1905,13 @@ void DungeonMasterMgr::Update(uint32 diff)
                             GiveKillXP(&session, sc.IsBoss, sc.IsElite);
                             if (sc.IsBoss) { ++session.BossesKilled; HandleBossDeath(&session); }
                             else           { ++session.MobsKilled; }
+
+                            // Credit all party members
+                            for (auto& pd : session.Players)
+                            {
+                                if (sc.IsBoss) ++pd.BossesKilled;
+                                else           ++pd.MobsKilled;
+                            }
 
                             if (session.IsActive() && session.TotalBosses > 0
                                 && session.BossesKilled >= session.TotalBosses)

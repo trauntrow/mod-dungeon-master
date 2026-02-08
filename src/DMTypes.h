@@ -261,6 +261,19 @@ struct PlayerStats
     uint32 TotalMobsKilled = 0;
     uint32 TotalBossesKilled = 0;
     uint32 TotalDeaths     = 0;
+    uint32 FastestClear    = 0;        // seconds (0 = no completions)
+};
+
+struct LeaderboardEntry
+{
+    uint32      Id          = 0;
+    uint32      Guid        = 0;       // character GUID (low part)
+    std::string CharName;
+    uint32      MapId       = 0;
+    uint32      DifficultyId = 0;
+    uint32      ClearTime   = 0;       // seconds
+    uint8       PartySize   = 1;
+    bool        Scaled      = false;   // true = scaled to party level
 };
 
 } // namespace DungeonMaster

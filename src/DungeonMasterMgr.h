@@ -92,8 +92,14 @@ public:
     void   ClearCooldown(ObjectGuid playerGuid);
     uint32 GetRemainingCooldown(ObjectGuid playerGuid) const;
 
-    // --- Stats (placeholder) ---
-    PlayerStats GetPlayerStats(ObjectGuid /*guid*/) const { return {}; }
+    // --- Stats & Leaderboard ---
+    PlayerStats GetPlayerStats(ObjectGuid guid) const;
+    void        LoadAllPlayerStats();
+    void        SavePlayerStats(uint32 guidLow);
+    void        UpdatePlayerStatsFromSession(const Session& session, bool success);
+    void        SaveLeaderboardEntry(const Session& session);
+    std::vector<LeaderboardEntry> GetLeaderboard(uint32 mapId, uint32 difficultyId, uint32 limit = 10) const;
+    std::vector<LeaderboardEntry> GetOverallLeaderboard(uint32 limit = 10) const;
 
     // --- Tick ---
     void Update(uint32 diff);
@@ -140,6 +146,10 @@ private:
 
     std::unordered_map<ObjectGuid, uint64>   _cooldowns;           // guid → expiry ts
     mutable std::mutex _cooldownMutex;
+
+    // Persistent player statistics (loaded from characters DB)
+    std::unordered_map<uint32, PlayerStats>  _playerStats;         // guidLow → stats
+    mutable std::mutex _statsMutex;
 
     // Creature pools (loaded from world DB once)
     std::unordered_map<uint32, std::vector<CreaturePoolEntry>> _creaturesByType;  // type → entries

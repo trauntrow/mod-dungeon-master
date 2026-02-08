@@ -46,6 +46,7 @@ enum DMGossipActions
     GOSSIP_ACTION_CANCEL        = 10002,
     GOSSIP_ACTION_SCALE_PARTY   = 10003, // scale creatures to party level
     GOSSIP_ACTION_SCALE_TIER    = 10004, // use difficulty tier's natural level range
+    GOSSIP_ACTION_LEADERBOARD   = 10005, // view leaderboard
 };
 
 struct PlayerDMSelection
@@ -115,6 +116,8 @@ public:
             ShowInfoMenu(player, creature);
         else if (action == GOSSIP_ACTION_MAIN_STATS)
             ShowStatsMenu(player, creature);
+        else if (action == GOSSIP_ACTION_LEADERBOARD)
+            ShowLeaderboard(player, creature);
         else if (action >= GOSSIP_ACTION_DIFF_BASE && action < GOSSIP_ACTION_THEME_BASE)
         {
             uint32 diffId = action - GOSSIP_ACTION_DIFF_BASE;
@@ -165,6 +168,7 @@ private:
         AddGossipItemFor(player, GOSSIP_ICON_BATTLE, "Begin Challenge",      GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MAIN_START);
         AddGossipItemFor(player, GOSSIP_ICON_CHAT,   "How does this work?",  GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MAIN_INFO);
         AddGossipItemFor(player, GOSSIP_ICON_TABARD, "View my statistics",   GOSSIP_SENDER_MAIN, GOSSIP_ACTION_MAIN_STATS);
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "Leaderboard",          GOSSIP_SENDER_MAIN, GOSSIP_ACTION_LEADERBOARD);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
     }
 
@@ -344,6 +348,59 @@ private:
         ChatHandler(player->GetSession()).SendSysMessage(buf);
         snprintf(buf, sizeof(buf), "  Bosses Slain: |cFFFFFFFF%u|r", st.TotalBossesKilled);
         ChatHandler(player->GetSession()).SendSysMessage(buf);
+        snprintf(buf, sizeof(buf), "  Deaths:       |cFFFF0000%u|r", st.TotalDeaths);
+        ChatHandler(player->GetSession()).SendSysMessage(buf);
+        if (st.FastestClear > 0)
+        {
+            uint32 m = st.FastestClear / 60;
+            uint32 s = st.FastestClear % 60;
+            snprintf(buf, sizeof(buf), "  Fastest Clear:|cFF00FFFF %um %02us|r", m, s);
+            ChatHandler(player->GetSession()).SendSysMessage(buf);
+        }
+        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700==========================================|r");
+        AddGossipItemFor(player, GOSSIP_ICON_TABARD, "|cFFFFD700View Leaderboard|r",
+            GOSSIP_SENDER_MAIN, GOSSIP_ACTION_LEADERBOARD);
+        AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
+        SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());
+    }
+
+    void ShowLeaderboard(Player* player, Creature* creature)
+    {
+        player->PlayerTalkClass->ClearMenus();
+
+        auto entries = sDungeonMasterMgr->GetOverallLeaderboard(10);
+
+        ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700========== Fastest Clears (All) ==========|r");
+
+        if (entries.empty())
+        {
+            ChatHandler(player->GetSession()).SendSysMessage("  |cFF808080No runs recorded yet.|r");
+        }
+        else
+        {
+            uint32 rank = 0;
+            for (const auto& e : entries)
+            {
+                ++rank;
+                uint32 m = e.ClearTime / 60;
+                uint32 s = e.ClearTime % 60;
+
+                const DifficultyTier* diff = sDMConfig->GetDifficulty(e.DifficultyId);
+                const DungeonInfo* dg = sDMConfig->GetDungeon(e.MapId);
+
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                    "  |cFFFFD700#%u|r |cFFFFFFFF%s|r — |cFF00FFFF%um %02us|r — %s (%s)%s",
+                    rank,
+                    e.CharName.c_str(),
+                    m, s,
+                    dg ? dg->Name.c_str() : "?",
+                    diff ? diff->Name.c_str() : "?",
+                    e.Scaled ? " |cFF00FF00[Scaled]|r" : "");
+                ChatHandler(player->GetSession()).SendSysMessage(buf);
+            }
+        }
+
         ChatHandler(player->GetSession()).SendSysMessage("|cFFFFD700==========================================|r");
         AddGossipItemFor(player, GOSSIP_ICON_CHAT, "<< Back", GOSSIP_SENDER_MAIN, GOSSIP_ACTION_CANCEL);
         SendGossipMenuFor(player, DEFAULT_GOSSIP_MESSAGE, creature->GetGUID());

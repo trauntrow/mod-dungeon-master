@@ -19,6 +19,8 @@ Players interact with a Dungeon Master NPC to select a difficulty tier, creature
 - **Auto-resurrect** — Dead players revive at the entrance when the group leaves combat
 - **Class-appropriate rewards** — Guaranteed gold on every kill + armor-proficiency-filtered gear (no plate on druids)
 - **Cooldown system** — Configurable per-character cooldown between runs
+- **Persistent statistics** — Tracks runs, kills, deaths, and fastest clear times per character
+- **Leaderboard** — Server-wide fastest clear times viewable from the NPC
 - **GM commands** — `.dm reload`, `.dm status`, `.dm list`, `.dm end`, `.dm clearcooldown`
 
 ## Installation
@@ -36,12 +38,17 @@ Players interact with a Dungeon Master NPC to select a difficulty tier, creature
    source data/sql/db-world/base/dm_setup.sql
    ```
 
-4. Copy the config file:
+4. Run the SQL setup on your **characters** database:
+   ```sql
+   source data/sql/db-characters/base/dm_characters_setup.sql
+   ```
+
+5. Copy the config file:
    ```
    conf/mod_dungeon_master.conf.dist and change to conf/mod_dungeon_master.conf
    ```
 
-5. Restart the server.
+6. Restart the server.
 
 ## Level Scaling (How It Works)
 
