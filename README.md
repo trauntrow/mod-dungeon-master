@@ -16,7 +16,7 @@ Players interact with a Dungeon Master NPC to select a difficulty tier, creature
 - **Elite & boss modifiers** — Configurable health/damage multipliers for elites and bosses
 - **Per-player difficulty scaling** — HP/damage scale with party size; solo players get a reduction
 - **Auto-resurrect** — Dead players revive at the entrance when the group leaves combat
-- **Rewards** — Level-scaled gold + random uncommon/rare/epic gear
+- **Class-appropriate rewards** — Guaranteed gold on every kill + armor-proficiency-filtered gear (no plate on druids)
 - **Cooldown system** — Configurable per-character cooldown between runs
 - **GM commands** — `.dm reload`, `.dm status`, `.dm list`, `.dm end`, `.dm clearcooldown`
 
@@ -49,8 +49,21 @@ The core scaling fix ensures creatures match the actual player level:
 1. **Effective Level** = solo player's level, or the group's average level.
 2. **Level Band** = EffectiveLevel ± `LevelBand` (default 3), clamped to the difficulty tier's range.
 3. Only creatures whose level range overlaps the band are eligible for spawning.
+4. Creatures are force-scaled to the target level with recalculated HP, damage, armor, and defense stats.
 
 Example: A level 35 player on "Journeyman (30-44)" with LevelBand=3 → creatures are level 32-38 only.
+
+## Loot
+
+Every creature drops gold (minimum 1 silver).  Item drops use WoW-like rates:
+
+| Creature Type | Gold | Items |
+|---------------|------|-------|
+| Trash mob | Always | 15% grey/white junk, 3% green equipment |
+| Elite | Always | 40% green equipment |
+| Boss | Always | 2 guaranteed rare/epic equipment pieces |
+
+All equipment drops respect the party's class proficiencies — druids get leather, warriors get plate, etc.
 
 ## Configuration
 
@@ -64,6 +77,7 @@ All settings are in `mod_dungeon_master.conf`.  Key settings:
 | `Scaling.EliteHealthMult` | 2.0 | Elite trash HP multiplier |
 | `Dungeon.EliteChance` | 20 | % chance a trash mob is elite |
 | `Dungeon.BossCount` | 1 | Number of bosses per run |
+| `Dungeon.AggroRadius` | 15.0 | Detection range in yards (lower = less swarming) |
 
 ## GM Commands
 
