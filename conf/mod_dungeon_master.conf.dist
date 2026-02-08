@@ -134,6 +134,14 @@ DungeonMaster.Dungeon.BossCount = 1
 #        Default: 20
 DungeonMaster.Dungeon.EliteChance = 20
 
+#    DungeonMaster.Dungeon.AggroRadius
+#        Detection radius for spawned creatures (in yards).
+#        Controls how far away a mob will detect and aggro players.
+#        Default: 15.0  (reduced from standard WoW ~20-45 range)
+#        Lower values (8-12) make dungeons feel less "swarm-y".
+#        Creatures are set to idle at their spawn points with no wandering.
+DungeonMaster.Dungeon.AggroRadius = 15.0
+
 #    DungeonMaster.Dungeon.Whitelist
 #        Comma-separated map IDs (empty = all allowed)
 DungeonMaster.Dungeon.Whitelist = ""

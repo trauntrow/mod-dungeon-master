@@ -78,6 +78,7 @@ public:
     // --- Dungeon population ---
     uint32 GetBossCount()       const { return _bossCount; }
     uint32 GetEliteChance()     const { return _eliteChance; }
+    float  GetAggroRadius()     const { return _aggroRadius; }
 
     // --- Timers ---
     uint32 GetCooldownMinutes()   const { return _cooldownMinutes; }
@@ -133,6 +134,7 @@ private:
     // Dungeon
     uint32 _bossCount    = 1;
     uint32 _eliteChance  = 20;
+    float  _aggroRadius  = 15.0f;
 
     // Timers
     uint32 _cooldownMinutes   = 5;

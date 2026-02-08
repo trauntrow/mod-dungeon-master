@@ -119,7 +119,7 @@ private:
     void   GiveItemReward(Player* player, uint8 rewardLevel, uint8 quality);
     void   GiveKillXP(Session* session, bool isBoss, bool isElite);
     uint32 SelectRewardItem(uint8 level, uint8 quality, uint32 playerClass);
-    uint32 SelectLootItem(uint8 level, uint8 minQuality, uint8 maxQuality, bool equipmentOnly = false);
+    uint32 SelectLootItem(uint8 level, uint8 minQuality, uint8 maxQuality, bool equipmentOnly = false, uint32 playerClass = 0);
 
     // Scaling helpers
     float CalculateHealthMultiplier(const Session* session) const;

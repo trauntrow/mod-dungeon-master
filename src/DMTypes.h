@@ -228,21 +228,26 @@ struct ClassLevelStatEntry
 struct RewardItem
 {
     uint32 Entry         = 0;
-    uint32 MinLevel      = 1;
-    uint32 MaxLevel      = 80;
-    uint8  Quality       = 0;   // 0=Poor … 4=Epic
+    uint32 MinLevel      = 1;       // RequiredLevel
+    uint32 MaxLevel      = 80;      // MinLevel + window
+    uint16 ItemLevel     = 0;       // item_template.ItemLevel
+    uint8  Quality       = 0;       // 0=Poor … 4=Epic
     uint32 InventoryType = 0;
-    uint32 Class         = 0;
-    uint32 SubClass      = 0;
+    uint32 Class         = 0;       // 2=Weapon, 4=Armor
+    uint32 SubClass      = 0;       // armor: 1=cloth 2=leather 3=mail 4=plate
+    int32  AllowableClass = -1;     // bitmask of player classes (-1 = all)
 };
 
 /// One item in the mob loot pool (all qualities, broader categories).
 struct LootPoolItem
 {
-    uint32 Entry     = 0;
-    uint8  MinLevel  = 0;
-    uint8  Quality   = 0;    // 0=Grey 1=White 2=Green 3=Blue 4=Epic
-    uint8  ItemClass = 0;    // 2=Weapon, 4=Armor, etc.
+    uint32 Entry          = 0;
+    uint8  MinLevel       = 0;      // RequiredLevel from item_template
+    uint16 ItemLevel      = 0;      // ItemLevel from item_template (for RequiredLevel=0 items)
+    uint8  Quality        = 0;      // 0=Grey 1=White 2=Green 3=Blue 4=Epic
+    uint8  ItemClass      = 0;      // 2=Weapon, 4=Armor, etc.
+    uint8  SubClass       = 0;      // armor: 0=misc 1=cloth 2=leather 3=mail 4=plate 6=shield
+    int32  AllowableClass = -1;     // bitmask of classes that can use (-1 = all)
 };
 
 /// Lifetime stats for one player (placeholder – not yet persisted).

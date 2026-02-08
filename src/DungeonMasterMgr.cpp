@@ -138,12 +138,22 @@ void DungeonMasterMgr::LoadCreaturePools()
         "AND ct.name NOT LIKE '%[UNUSED]%' "
         "AND ct.name NOT LIKE '%[PH]%' "
         "AND ct.name NOT LIKE '%Test %' "
+        "AND ct.name NOT LIKE '%Test_%' "
         "AND ct.name NOT LIKE '%DVREF%' "
         "AND ct.name NOT LIKE '%[DNT]%' "
         "AND ct.name NOT LIKE '%Trigger%' "
         "AND ct.name NOT LIKE '%Invisible%' "
         "AND ct.name NOT LIKE '%Dummy%' "
         "AND ct.name NOT LIKE '%(%' "                                    // skip (1), (2) variant entries
+        "AND ct.name NOT LIKE '%Debug%' "
+        "AND ct.name NOT LIKE '%Template%' "
+        "AND ct.name NOT LIKE '%Copy of%' "
+        "AND ct.name NOT LIKE '% - DNT' "
+        "AND ct.name NOT LIKE '%Placeholder%' "
+        "AND ct.name NOT LIKE '%Visual%' "
+        "AND ct.name NOT LIKE '%Server%' "
+        "AND ct.name NOT LIKE '%Quest%' "                                // quest scripted mobs
+        "AND ct.name NOT LIKE '%zzOLD%' "
         "AND (ct.subname = '' OR ct.subname IS NULL) "                   // no guild/title text under name
         "AND ct.`rank` != 3 "                                         // exclude World Bosses
         "AND (ctm.Ground IS NULL OR ctm.Ground != 0) "               // can walk
@@ -168,12 +178,22 @@ void DungeonMasterMgr::LoadCreaturePools()
             "AND name NOT LIKE '%[UNUSED]%' "
             "AND name NOT LIKE '%[PH]%' "
             "AND name NOT LIKE '%Test %' "
+            "AND name NOT LIKE '%Test_%' "
             "AND name NOT LIKE '%DVREF%' "
             "AND name NOT LIKE '%[DNT]%' "
             "AND name NOT LIKE '%Trigger%' "
             "AND name NOT LIKE '%Invisible%' "
             "AND name NOT LIKE '%Dummy%' "
             "AND name NOT LIKE '%(%' "
+            "AND name NOT LIKE '%Debug%' "
+            "AND name NOT LIKE '%Template%' "
+            "AND name NOT LIKE '%Copy of%' "
+            "AND name NOT LIKE '% - DNT' "
+            "AND name NOT LIKE '%Placeholder%' "
+            "AND name NOT LIKE '%Visual%' "
+            "AND name NOT LIKE '%Server%' "
+            "AND name NOT LIKE '%Quest%' "
+            "AND name NOT LIKE '%zzOLD%' "
             "AND (subname = '' OR subname IS NULL) "
             "AND `rank` != 3 "
             "ORDER BY type, minlevel");
@@ -281,12 +301,20 @@ void DungeonMasterMgr::LoadRewardItems()
     _rewardItems.clear();
 
     QueryResult result = WorldDatabase.Query(
-        "SELECT entry, RequiredLevel, Quality, InventoryType, class, subclass "
+        "SELECT entry, RequiredLevel, Quality, InventoryType, class, subclass, "
+        "AllowableClass, ItemLevel "
         "FROM item_template "
         "WHERE Quality >= 2 AND Quality <= 4 "
         "AND RequiredLevel > 0 AND RequiredLevel <= 80 "
         "AND InventoryType > 0 AND InventoryType < 20 "
         "AND class IN (2, 4) AND (Flags & 0x8) = 0 "
+        "AND AllowableClass != 0 "
+        "AND name NOT LIKE '%Test%' "
+        "AND name NOT LIKE '%Deprecated%' "
+        "AND name NOT LIKE '%[PH]%' "
+        "AND name NOT LIKE '%OLD%' "
+        "AND name NOT LIKE '%Monster -%' "
+        "AND name NOT LIKE '%zzOLD%' "
         "ORDER BY RequiredLevel, Quality");
 
     if (result)
@@ -302,6 +330,8 @@ void DungeonMasterMgr::LoadRewardItems()
             ri.InventoryType = f[3].Get<uint32>();
             ri.Class         = f[4].Get<uint32>();
             ri.SubClass      = f[5].Get<uint32>();
+            ri.AllowableClass = f[6].Get<int32>();
+            ri.ItemLevel     = f[7].Get<uint16>();
             _rewardItems.push_back(ri);
         } while (result->NextRow());
     }
@@ -319,19 +349,27 @@ void DungeonMasterMgr::LoadLootPool()
     _lootPool.clear();
 
     // Load all usable items: grey vendor junk, white consumables,
-    // green/blue/purple equipment (weapons + armor)
+    // green/blue/purple equipment (weapons + armor).
+    // Exclude equipment items with RequiredLevel=0 (these are often GM/test/high-ilvl
+    // items that would be inappropriate for low-level players).
+    // Non-equipment (consumables, junk) with RequiredLevel=0 is fine.
     QueryResult result = WorldDatabase.Query(
-        "SELECT entry, RequiredLevel, Quality, class FROM item_template "
+        "SELECT entry, RequiredLevel, Quality, class, subclass, AllowableClass, ItemLevel "
+        "FROM item_template "
         "WHERE Quality <= 4 "
-        "AND RequiredLevel <= 80 "
+        "AND ItemLevel <= 300 "
         "AND SellPrice > 0 "
         "AND class IN (0, 2, 4, 7, 15) "
         "AND (Flags & 0x8) = 0 "
+        "AND AllowableClass != 0 "
+        "AND (RequiredLevel > 0 OR class NOT IN (2, 4)) "               // equipment must have a required level
         "AND name NOT LIKE '%Test%' "
         "AND name NOT LIKE '%Deprecated%' "
         "AND name NOT LIKE '%[PH]%' "
         "AND name NOT LIKE '%OLD%' "
         "AND name NOT LIKE '%Monster -%' "
+        "AND name NOT LIKE '%zzOLD%' "
+        "AND name NOT LIKE '%Debug%' "
         "ORDER BY RequiredLevel, Quality");
 
     if (result)
@@ -340,10 +378,13 @@ void DungeonMasterMgr::LoadLootPool()
         {
             Field* f = result->Fetch();
             LootPoolItem li;
-            li.Entry     = f[0].Get<uint32>();
-            li.MinLevel  = f[1].Get<uint8>();
-            li.Quality   = f[2].Get<uint8>();
-            li.ItemClass = f[3].Get<uint8>();
+            li.Entry          = f[0].Get<uint32>();
+            li.MinLevel       = f[1].Get<uint8>();
+            li.Quality        = f[2].Get<uint8>();
+            li.ItemClass      = f[3].Get<uint8>();
+            li.SubClass       = f[4].Get<uint8>();
+            li.AllowableClass = f[5].Get<int32>();
+            li.ItemLevel      = f[6].Get<uint16>();
             _lootPool.push_back(li);
         } while (result->NextRow());
     }
@@ -776,6 +817,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
     // Helper lambda: force a creature to the target level with proper stats.
     auto applyLevelAndStats = [&](Creature* c, float extraHpMult, float extraDmgMult)
     {
+        // --- Force level ---
         c->SetLevel(targetLevel);
 
         uint8 unitClass = c->GetCreatureTemplate()->unit_class;
@@ -795,9 +837,6 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         // --- Damage ---
         if (baseStats)
         {
-            // Use the standard AzerothCore damage formula:
-            //   MINDAMAGE = ((dmg_base + ap/14) * DmgMod) * (atkTime/1000)
-            //   MAXDAMAGE = (((dmg_base*1.5) + ap/14) * DmgMod) * (atkTime/1000)
             float dmgBase  = baseStats->BaseDamage;
             float apBonus  = static_cast<float>(baseStats->AttackPower) / 14.0f;
             float atkTime  = static_cast<float>(c->GetCreatureTemplate()->BaseAttackTime) / 1000.0f;
@@ -806,7 +845,6 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
             float minDmg = (dmgBase + apBonus) * atkTime * dmgMult * extraDmgMult;
             float maxDmg = ((dmgBase * 1.5f) + apBonus) * atkTime * dmgMult * extraDmgMult;
 
-            // Clamp to at least 1 damage
             minDmg = std::max(1.0f, minDmg);
             maxDmg = std::max(minDmg, maxDmg);
 
@@ -819,13 +857,23 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         if (baseStats && baseStats->BaseArmor > 0)
             c->SetArmor(baseStats->BaseArmor);
 
-        // --- Clear spell resistances (inherited from high-level templates cause misses) ---
+        // --- Clear spell resistances ---
         for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
             c->SetResistance(SpellSchools(school), 0);
 
-        // --- Clear mechanic immunities so player CC/abilities land ---
+        // --- Clear mechanic immunities ---
         for (uint32 mech = 1; mech < MAX_MECHANIC; ++mech)
             c->ApplySpellImmune(0, IMMUNITY_MECHANIC, mech, false);
+
+        // --- Movement: idle at spawn, no wandering ---
+        c->SetWanderDistance(0.0f);
+        c->SetDefaultMovementType(IDLE_MOTION_TYPE);
+        c->GetMotionMaster()->MoveIdle();
+
+        // --- CRITICAL: Force client to see updated level ---
+        // SummonCreature sends CREATE_OBJECT with the *template* level.
+        // Force a visibility refresh so clients receive updated fields.
+        c->UpdateObjectVisibility(true);
 
         // Track this GUID for future cleanup
         guidList.push_back(c->GetGUID());
@@ -907,20 +955,24 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 }
 
 // ===========================================================================
-// Creature selection — FULL THEMED POOL
+// Creature selection — LEVEL-AWARE THEMED POOL
 //
-// Since PopulateDungeon force-scales every creature to the session's
-// target level (HP, damage, armor all overridden from creature_classlevelstats),
-// the creature's original level is irrelevant for gameplay.  We therefore
-// search the ENTIRE themed pool for maximum visual variety, rather than
-// restricting to a narrow level band that might only contain 1-2 entries.
+// Creatures are force-scaled to the session's target level, so the
+// original level doesn't affect gameplay.  However, we PREFER creatures
+// whose original level is near the session level for visual consistency
+// (a level-10 dungeon should look like level-10 content, not like
+// Icecrown mobs scaled down).
+//
+// Strategy:
+//   1. Try strict band: creatures within [bandMin, bandMax]
+//   2. Widen to ±10 of effective level
+//   3. Widen to ±20 of effective level
+//   4. Fall back to full pool
 // ===========================================================================
 uint32 DungeonMasterMgr::SelectCreatureForTheme(const Theme* theme,
-    uint8 /*bandMin*/, uint8 /*bandMax*/, bool isBoss)
+    uint8 bandMin, uint8 bandMax, bool isBoss)
 {
     if (!theme) return 0;
-
-    std::vector<uint32> candidates;
 
     // Build the set of acceptable creature types for the theme.
     std::set<uint32> types;
@@ -931,57 +983,88 @@ uint32 DungeonMasterMgr::SelectCreatureForTheme(const Theme* theme,
         else types.insert(t);
     }
 
-    if (isBoss)
+    // Helper: check if a creature entry's level range overlaps [lo, hi]
+    auto inRange = [](const CreaturePoolEntry& e, uint8 lo, uint8 hi) -> bool
     {
-        // ----- BOSS SELECTION -----
-        // Gather ALL themed elites from every bracket.
-        for (const auto& [bracket, vec] : _bossCreatures)
-            for (const auto& e : vec)
-                if (anyType || types.count(e.Type))
-                    candidates.push_back(e.Entry);
+        return e.MaxLevel >= lo && e.MinLevel <= hi;
+    };
 
-        // If no themed elites exist at all, promote themed trash.
-        if (candidates.empty())
+    // Helper: check if a creature type matches the theme
+    auto typeMatch = [&](uint32 cType) -> bool
+    {
+        return anyType || types.count(cType);
+    };
+
+    // Graduated level windows to try (strict → wider).
+    // Hard cap at ±8 to ensure creatures are always near the player's level.
+    // This prevents "??" display and keeps natural aggro ranges reasonable.
+    struct LevelWindow { uint8 lo; uint8 hi; };
+    uint8 midLevel = (bandMin / 2) + (bandMax / 2);
+    LevelWindow windows[] = {
+        { bandMin, bandMax },                                                // strict band (±3 of effective)
+        { static_cast<uint8>(midLevel > 5 ? midLevel - 5 : 1),
+          static_cast<uint8>(std::min<uint16>(midLevel + 5, 83)) },          // ±5
+        { static_cast<uint8>(midLevel > 8 ? midLevel - 8 : 1),
+          static_cast<uint8>(std::min<uint16>(midLevel + 8, 83)) },          // ±8 (hard cap)
+    };
+
+    for (const auto& win : windows)
+    {
+        std::vector<uint32> candidates;
+
+        if (isBoss)
         {
-            LOG_WARN("module", "DungeonMaster: Promoting themed trash to boss for theme '{}'", theme->Name);
-            for (const auto& [t, vec] : _creaturesByType)
-            {
-                if (!anyType && !types.count(t)) continue;
+            for (const auto& [bracket, vec] : _bossCreatures)
                 for (const auto& e : vec)
-                    candidates.push_back(e.Entry);
-            }
-        }
-    }
-    else
-    {
-        // ----- TRASH SELECTION -----
-        // Gather ALL creatures matching the theme across all levels.
-        for (uint32 t : theme->CreatureTypes)
-        {
-            if (t == uint32(-1))
+                    if (typeMatch(e.Type) && inRange(e, win.lo, win.hi))
+                        candidates.push_back(e.Entry);
+
+            // If no elites, promote themed trash within this window
+            if (candidates.empty())
             {
-                for (const auto& [type, vec] : _creaturesByType)
+                for (const auto& [t, vec] : _creaturesByType)
+                {
+                    if (!typeMatch(t)) continue;
                     for (const auto& e : vec)
-                        candidates.push_back(e.Entry);
+                        if (inRange(e, win.lo, win.hi))
+                            candidates.push_back(e.Entry);
+                }
             }
-            else
+        }
+        else
+        {
+            for (uint32 t : theme->CreatureTypes)
             {
-                auto it = _creaturesByType.find(t);
-                if (it != _creaturesByType.end())
-                    for (const auto& e : it->second)
-                        candidates.push_back(e.Entry);
+                if (t == uint32(-1))
+                {
+                    for (const auto& [type, vec] : _creaturesByType)
+                        for (const auto& e : vec)
+                            if (inRange(e, win.lo, win.hi))
+                                candidates.push_back(e.Entry);
+                }
+                else
+                {
+                    auto it = _creaturesByType.find(t);
+                    if (it != _creaturesByType.end())
+                        for (const auto& e : it->second)
+                            if (inRange(e, win.lo, win.hi))
+                                candidates.push_back(e.Entry);
+                }
             }
+        }
+
+        if (!candidates.empty())
+        {
+            LOG_DEBUG("module", "DungeonMaster: Selected from [{}-{}] window ({} candidates, boss={})",
+                win.lo, win.hi, candidates.size(), isBoss);
+
+            return candidates[RandInt<size_t>(0, candidates.size() - 1)];
         }
     }
 
-    if (candidates.empty())
-    {
-        LOG_ERROR("module", "DungeonMaster: ZERO candidates for theme '{}' (boss={})",
-            theme->Name, isBoss);
-        return 0;
-    }
-
-    return candidates[RandInt<size_t>(0, candidates.size() - 1)];
+    LOG_ERROR("module", "DungeonMaster: ZERO candidates for theme '{}' (boss={})",
+        theme->Name, isBoss);
+    return 0;
 }
 
 // ===========================================================================
@@ -1192,30 +1275,144 @@ void DungeonMasterMgr::GiveItemReward(Player* player, uint8 level, uint8 quality
     }
 }
 
-uint32 DungeonMasterMgr::SelectRewardItem(uint8 level, uint8 quality, uint32 /*playerClass*/)
+// ---------------------------------------------------------------------------
+// Armor proficiency mapping:
+//   WoW playerClass:  1=Warrior 2=Paladin 3=Hunter 4=Rogue 5=Priest
+//                     6=DK 7=Shaman 8=Mage 9=Warlock 11=Druid
+//
+// Max armor subclass each class can wear:
+//   Cloth(1):  Priest, Mage, Warlock
+//   Leather(2): Rogue, Druid
+//   Mail(3):    Hunter, Shaman
+//   Plate(4):   Warrior, Paladin, Death Knight
+//
+// Class bitmask: bit(classId-1), so Warrior=0x001, Paladin=0x002, etc.
+// ---------------------------------------------------------------------------
+static uint8 GetMaxArmorSubclass(uint32 playerClass)
 {
+    switch (playerClass)
+    {
+        case 5: case 8: case 9:              return 1;  // cloth: Priest, Mage, Warlock
+        case 4: case 11:                     return 2;  // leather: Rogue, Druid
+        case 3: case 7:                      return 3;  // mail: Hunter, Shaman
+        case 1: case 2: case 6:              return 4;  // plate: Warrior, Paladin, DK
+        default:                             return 4;
+    }
+}
+
+static uint32 GetClassBitmask(uint32 playerClass)
+{
+    if (playerClass == 0 || playerClass > 11) return 0x7FF;  // all classes
+    return 1 << (playerClass - 1);
+}
+
+uint32 DungeonMasterMgr::SelectRewardItem(uint8 level, uint8 quality, uint32 playerClass)
+{
+    uint8  maxArmor   = GetMaxArmorSubclass(playerClass);
+    uint32 classMask  = GetClassBitmask(playerClass);
+
     std::vector<uint32> cands;
     for (const auto& ri : _rewardItems)
-        if (ri.Quality == quality && ri.MinLevel <= level && ri.MaxLevel >= (level > 10 ? level - 10 : 1))
-            cands.push_back(ri.Entry);
+    {
+        // Quality filter
+        if (ri.Quality != quality) continue;
+
+        // Level filter: item RequiredLevel must be within a sensible window
+        // of the player's level (not above, and not more than 8 below)
+        if (ri.MinLevel > level) continue;
+        if (ri.MinLevel + 8 < level && level > 10) continue;
+
+        // Class restriction: AllowableClass bitmask check
+        if (ri.AllowableClass != -1 && !(ri.AllowableClass & classMask))
+            continue;
+
+        // Armor subclass: player can only wear their class's max armor or lower
+        // (Weapons use Class=2 so this only applies to Class=4 Armor items)
+        if (ri.Class == 4 && ri.SubClass > 0 && ri.SubClass <= 4)
+        {
+            if (ri.SubClass > maxArmor) continue;
+        }
+
+        cands.push_back(ri.Entry);
+    }
 
     return cands.empty() ? 0 : cands[RandInt<size_t>(0, cands.size() - 1)];
 }
 
-uint32 DungeonMasterMgr::SelectLootItem(uint8 level, uint8 minQuality, uint8 maxQuality, bool equipmentOnly)
+uint32 DungeonMasterMgr::SelectLootItem(uint8 level, uint8 minQuality, uint8 maxQuality,
+                                        bool equipmentOnly, uint32 playerClass)
 {
-    std::vector<uint32> cands;
-    uint8 lo = (level > 5) ? level - 5 : 0;
-    uint8 hi = level + 2;
+    // Determine expected ItemLevel range for this player level.
+    // Rough WoW mapping: ItemLevel ≈ RequiredLevel * 1.2 for green gear.
+    // We use this as a sanity check for items with RequiredLevel=0.
+    uint16 expectedMaxIlvl = static_cast<uint16>(level) * 2 + 10;
+
+    uint8  maxArmor  = playerClass ? GetMaxArmorSubclass(playerClass) : 4;
+    uint32 classMask = playerClass ? GetClassBitmask(playerClass) : 0x7FF;
+
+    // Try increasingly wider level windows
+    struct { uint8 below; uint8 above; } windows[] = {
+        { 3, 1 },   // strict: RequiredLevel in [level-3, level+1]
+        { 5, 2 },   // medium
+        { 8, 3 },   // wide
+        { 15, 5 },  // very wide (last resort)
+    };
+
+    for (const auto& win : windows)
+    {
+        uint8 lo = (level > win.below) ? (level - win.below) : 0;
+        uint8 hi = std::min<uint16>(level + win.above, 83);
+
+        std::vector<uint32> cands;
+        for (const auto& li : _lootPool)
+        {
+            if (li.Quality < minQuality || li.Quality > maxQuality) continue;
+            if (equipmentOnly && li.ItemClass != 2 && li.ItemClass != 4) continue;
+
+            // Level filter for items with RequiredLevel > 0
+            if (li.MinLevel > 0)
+            {
+                if (li.MinLevel < lo || li.MinLevel > hi) continue;
+            }
+            else
+            {
+                // RequiredLevel = 0: use ItemLevel as a sanity check
+                // (skip items whose ItemLevel is far above what the player should see)
+                if (li.ItemLevel > expectedMaxIlvl) continue;
+            }
+
+            // Class restriction for equipment items
+            if (equipmentOnly || (li.ItemClass == 2 || li.ItemClass == 4))
+            {
+                // AllowableClass bitmask check
+                if (li.AllowableClass != -1 && !(li.AllowableClass & classMask))
+                    continue;
+
+                // Armor subclass check (only for armor, not weapons)
+                if (li.ItemClass == 4 && li.SubClass > 0 && li.SubClass <= 4)
+                    if (li.SubClass > maxArmor) continue;
+            }
+
+            cands.push_back(li.Entry);
+        }
+
+        if (!cands.empty())
+            return cands[RandInt<size_t>(0, cands.size() - 1)];
+    }
+
+    // Ultimate fallback: any item of the right quality, ignore level entirely
+    // (better to drop SOMETHING than nothing)
+    std::vector<uint32> fallback;
     for (const auto& li : _lootPool)
     {
         if (li.Quality < minQuality || li.Quality > maxQuality) continue;
-        if (li.MinLevel < lo || li.MinLevel > hi) continue;
-        if (equipmentOnly && li.ItemClass != 2 && li.ItemClass != 4) continue; // weapons + armor only
-        cands.push_back(li.Entry);
+        if (equipmentOnly && li.ItemClass != 2 && li.ItemClass != 4) continue;
+        // Still enforce ItemLevel cap to avoid absurd drops
+        if (li.ItemLevel > expectedMaxIlvl) continue;
+        fallback.push_back(li.Entry);
     }
 
-    return cands.empty() ? 0 : cands[RandInt<size_t>(0, cands.size() - 1)];
+    return fallback.empty() ? 0 : fallback[RandInt<size_t>(0, fallback.size() - 1)];
 }
 
 // ---------------------------------------------------------------------------
@@ -1223,9 +1420,12 @@ uint32 DungeonMasterMgr::SelectLootItem(uint8 level, uint8 minQuality, uint8 max
 // gold and items.
 //
 // Drop table:
-//   Trash:  gold + 50% grey/white + 20% green equipment
-//   Elite:  gold + 1 green equipment guaranteed
-//   Boss:   gold + 2 rare/epic equipment (weapons/armor)
+//   Trash:  gold (always) + 15% grey/white + 3% green equipment
+//   Elite:  gold (always) + 40% green equipment
+//   Boss:   gold (always) + 2 rare/epic equipment (weapons/armor)
+//
+// Equipment drops are filtered by a random party member's class so that
+// items are always usable by someone in the group.
 // ---------------------------------------------------------------------------
 void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bool isBoss)
 {
@@ -1236,14 +1436,40 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
 
     uint8 level = session->EffectiveLevel;
 
-    // --- Gold ---
+    // Pick a random party member's class for equipment filtering.
+    // This ensures drops are usable by at least one person.
+    uint32 lootClass = 0;
+    if (!session->Players.empty())
+    {
+        // Try to pick a random alive player's class
+        std::vector<uint32> classes;
+        for (const auto& pd : session->Players)
+        {
+            Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
+            if (p && p->IsAlive())
+                classes.push_back(p->getClass());
+        }
+        if (classes.empty())
+        {
+            // All dead? Just pick from any player
+            for (const auto& pd : session->Players)
+            {
+                Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
+                if (p) { classes.push_back(p->getClass()); break; }
+            }
+        }
+        if (!classes.empty())
+            lootClass = classes[RandInt<size_t>(0, classes.size() - 1)];
+    }
+
+    // --- Gold (always drops — minimum 1 silver for visibility) ---
     uint32 baseGold = isBoss ? (level * 500u) : (level * 50u);
-    loot.gold = baseGold + RandInt<uint32>(0, baseGold / 3);
+    loot.gold = std::max(100u, baseGold + RandInt<uint32>(0, baseGold / 3));
 
     // --- Items ---
     auto addItem = [&](uint8 minQ, uint8 maxQ, bool eqOnly) -> bool
     {
-        uint32 entry = SelectLootItem(level, minQ, maxQ, eqOnly);
+        uint32 entry = SelectLootItem(level, minQ, maxQ, eqOnly, eqOnly ? lootClass : 0);
         if (!entry) return false;
 
         LootStoreItem storeItem(entry, 0, 100.0f, false, 1, 0, 1, 1);
@@ -1254,36 +1480,37 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
     if (isBoss)
     {
         // Boss: 2 guaranteed rare (blue) / epic (purple) equipment pieces
-        // Each roll picks from quality 3-4, equipment only (weapons + armor)
-        addItem(3, 4, true);
-        addItem(3, 4, true);
-
-        // If epic pool was empty for this level, fall back to blue equipment
-        // (the addItem calls above may have already succeeded with blues)
+        if (!addItem(3, 4, true))
+            addItem(2, 3, true);   // fallback to green/blue if no rare/epic at this level
+        if (!addItem(3, 4, true))
+            addItem(2, 3, true);
     }
     else
     {
-        // Check if this was an elite (has extra HP from the elite multiplier)
         bool isElite = false;
         for (const auto& sc : session->SpawnedCreatures)
             if (sc.Guid == creature->GetGUID() && sc.IsElite) { isElite = true; break; }
 
         if (isElite)
         {
-            // Elite: 1 guaranteed green equipment
-            addItem(2, 2, true);
+            // Elite: 40% chance of green equipment
+            if (RandInt<uint32>(1, 100) <= 40)
+            {
+                if (!addItem(2, 2, true))
+                    addItem(2, 2, false);
+            }
         }
         else
         {
-            // Trash: 50% grey/white item, 20% green equipment
-            if (RandInt<uint32>(1, 100) <= 50)
+            // Trash: 15% grey/white junk, 3% green equipment
+            if (RandInt<uint32>(1, 100) <= 15)
                 addItem(0, 1, false);
-            if (RandInt<uint32>(1, 100) <= 20)
+            if (RandInt<uint32>(1, 100) <= 3)
                 addItem(2, 2, true);
         }
     }
 
-    // Make corpse lootable
+    // Ensure lootable even if only gold
     creature->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
 }
 

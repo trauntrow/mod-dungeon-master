@@ -83,6 +83,7 @@ void DMConfig::LoadConfig(bool reload)
     // Dungeon settings
     _bossCount    = sConfigMgr->GetOption<uint32>("DungeonMaster.Dungeon.BossCount",   1);
     _eliteChance  = sConfigMgr->GetOption<uint32>("DungeonMaster.Dungeon.EliteChance", 20);
+    _aggroRadius  = sConfigMgr->GetOption<float> ("DungeonMaster.Dungeon.AggroRadius", 15.0f);
 
     // Timers
     _cooldownMinutes   = sConfigMgr->GetOption<uint32>("DungeonMaster.Cooldown.Minutes",     5);
