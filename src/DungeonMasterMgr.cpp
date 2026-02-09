@@ -95,8 +95,8 @@ void DungeonMasterMgr::Initialize()
 {
     LOG_INFO("module", "DungeonMaster: Initializing...");
     LoadFromDB();
-    LOG_INFO("module", "DungeonMaster: Ready — {} creature types, {} bosses, {} reward items.",
-        _creaturesByType.size(), _bossCreatures.size(), _rewardItems.size());
+    LOG_INFO("module", "DungeonMaster: Ready — {} creature types, {} bosses, {} reward items, {} loot items.",
+        _creaturesByType.size(), _bossCreatures.size(), _rewardItems.size(), _lootPool.size());
 }
 
 void DungeonMasterMgr::LoadFromDB()
@@ -307,7 +307,8 @@ void DungeonMasterMgr::LoadRewardItems()
         "FROM item_template "
         "WHERE Quality >= 2 AND Quality <= 4 "
         "AND RequiredLevel > 0 AND RequiredLevel <= 80 "
-        "AND InventoryType > 0 AND InventoryType < 20 "
+        "AND InventoryType > 0 AND InventoryType <= 26 "
+        "AND InventoryType NOT IN (18, 19, 24) "
         "AND class IN (2, 4) AND (Flags & 0x8) = 0 "
         "AND AllowableClass != 0 "
         "AND name NOT LIKE '%Test%' "
@@ -1200,22 +1201,30 @@ void DungeonMasterMgr::DistributeRewards(Session* session)
 
     uint8 rewardLevel = static_cast<uint8>(std::min<uint32>(lvl, 80));
 
+    LOG_INFO("module", "DungeonMaster: DistributeRewards — EffectiveLevel={}, rewardLevel={}, "
+        "rewardPool={} items, players={}",
+        lvl, rewardLevel, _rewardItems.size(), session->Players.size());
+
     for (const auto& pd : session->Players)
     {
         Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
-        if (!p) continue;
+        if (!p)
+        {
+            LOG_WARN("module", "DungeonMaster: Player {} not found for rewards", pd.PlayerGuid.GetCounter());
+            continue;
+        }
 
         GiveGoldReward(p, perPlayer);
 
-        if (RandInt<uint32>(1, 100) <= sDMConfig->GetItemChance())
-        {
-            uint8 quality = 2;
-            if (RandInt<uint32>(1, 100) <= sDMConfig->GetEpicChance())
-                quality = 4;
-            else if (RandInt<uint32>(1, 100) <= sDMConfig->GetRareChance())
-                quality = 3;
-            GiveItemReward(p, rewardLevel, quality);
-        }
+        // Completion reward: always give at least one item
+        // Determine quality: roll epic first, then rare, fallback green
+        uint8 quality = 2;  // green baseline
+        if (RandInt<uint32>(1, 100) <= sDMConfig->GetEpicChance())
+            quality = 4;
+        else if (RandInt<uint32>(1, 100) <= sDMConfig->GetRareChance())
+            quality = 3;
+
+        GiveItemReward(p, rewardLevel, quality);
     }
 }
 
@@ -1263,8 +1272,55 @@ void DungeonMasterMgr::GiveGoldReward(Player* player, uint32 amount)
 
 void DungeonMasterMgr::GiveItemReward(Player* player, uint8 level, uint8 quality)
 {
-    uint32 itemEntry = SelectRewardItem(level, quality, player->getClass());
-    if (!itemEntry) return;
+    uint32 playerClass = player->getClass();
+    uint32 itemEntry = SelectRewardItem(level, quality, playerClass);
+
+    // Quality fallback: if requested quality isn't found, try lower
+    if (!itemEntry && quality > 2)
+    {
+        LOG_WARN("module", "DungeonMaster: No quality {} items for level {}, class {}. Trying lower...",
+            quality, level, playerClass);
+        for (uint8 q = quality - 1; q >= 2 && !itemEntry; --q)
+            itemEntry = SelectRewardItem(level, q, playerClass);
+    }
+
+    // Level window fallback: try wider level ranges
+    if (!itemEntry)
+    {
+        LOG_WARN("module", "DungeonMaster: No items for level {}, class {}, quality {}. Widening search...",
+            level, playerClass, quality);
+
+        // Try levels ±15, then ±25, then any level
+        uint8 windows[] = { 15, 25, 80 };
+        for (uint8 w : windows)
+        {
+            uint8 lo = (level > w) ? level - w : 1;
+            uint8 hi = std::min<uint8>(level + w, 80);
+            for (const auto& ri : _rewardItems)
+            {
+                if (ri.Quality < 2 || ri.Quality > 4) continue;
+                if (ri.MinLevel < lo || ri.MinLevel > hi) continue;
+                if (ri.AllowableClass != -1 && !(ri.AllowableClass & (1 << (playerClass - 1))))
+                    continue;
+                itemEntry = ri.Entry;
+                break;
+            }
+            if (itemEntry) break;
+        }
+    }
+
+    if (!itemEntry)
+    {
+        LOG_ERROR("module", "DungeonMaster: STILL no reward item for player {} (level {}, class {}). "
+            "Reward pool has {} items total.",
+            player->GetName(), level, playerClass, _rewardItems.size());
+        ChatHandler(player->GetSession()).SendSysMessage(
+            "|cFFFF0000[Dungeon Master]|r No suitable gear found for your class. Gold only.");
+        return;
+    }
+
+    LOG_INFO("module", "DungeonMaster: Giving item {} to {} (level {}, quality {}, class {})",
+        itemEntry, player->GetName(), level, quality, playerClass);
 
     ItemPosCountVec dest;
     if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemEntry, 1) == EQUIP_ERR_OK)
@@ -1283,13 +1339,21 @@ void DungeonMasterMgr::GiveItemReward(Player* player, uint8 level, uint8 quality
     }
     else
     {
-        MailDraft("Dungeon Master Reward", "Your bags were full. Here is your reward!")
-            .AddItem(Item::CreateItem(itemEntry, 1, player))
-            .SendMailTo(CharacterDatabaseTransaction(nullptr),
-                MailReceiver(player, player->GetGUID().GetCounter()),
-                MailSender(MAIL_NORMAL, 0, MAIL_STATIONERY_GM));
-        ChatHandler(player->GetSession()).SendSysMessage(
-            "|cFFFFD700[Dungeon Master]|r Bags full! Reward mailed to you.");
+        Item* mailItem = Item::CreateItem(itemEntry, 1, player);
+        if (mailItem)
+        {
+            MailDraft("Dungeon Master Reward", "Your bags were full. Here is your reward!")
+                .AddItem(mailItem)
+                .SendMailTo(CharacterDatabaseTransaction(nullptr),
+                    MailReceiver(player, player->GetGUID().GetCounter()),
+                    MailSender(MAIL_NORMAL, 0, MAIL_STATIONERY_GM));
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "|cFFFFD700[Dungeon Master]|r Bags full! Reward mailed to you.");
+        }
+        else
+        {
+            LOG_ERROR("module", "DungeonMaster: Failed to create mail item {} for {}", itemEntry, player->GetName());
+        }
     }
 }
 
@@ -1353,6 +1417,10 @@ uint32 DungeonMasterMgr::SelectRewardItem(uint8 level, uint8 quality, uint32 pla
 
         cands.push_back(ri.Entry);
     }
+
+    LOG_INFO("module", "DungeonMaster: SelectRewardItem(level={}, quality={}, class={}) "
+        "-> {} candidates (pool={}, maxArmor={})",
+        level, quality, playerClass, cands.size(), _rewardItems.size(), maxArmor);
 
     return cands.empty() ? 0 : cands[RandInt<size_t>(0, cands.size() - 1)];
 }
