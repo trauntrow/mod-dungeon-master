@@ -50,6 +50,38 @@ Players interact with a Dungeon Master NPC to select a difficulty tier, creature
 
 6. Restart the server.
 
+## Dungeon Master Spawns
+
+The Dungeon Master NPC spawns in every major city.
+
+You may also spawn them with .npc add 500000
+
+### Alliance
+
+| City | Zone | Map | X | Y | Z |
+|------|------|-----|---|---|---|
+| Stormwind City | Trade District, near the fountain | 0 | -8842.0 | 626.0 | 94.30 |
+| Ironforge | The Commons, near the central forge | 0 | -4918.0 | -957.0 | 501.53 |
+| Darnassus | Tradesman's Terrace | 1 | 9869.0 | 2494.0 | 1316.20 |
+| Exodar | The Crystal Hall | 530 | -3862.7 | -11645.8 | -137.63 |
+
+### Horde
+
+| City | Zone | Map | X | Y | Z |
+|------|------|-----|---|---|---|
+| Orgrimmar | Valley of Strength, near the bank | 1 | 1676.0 | -4316.0 | 61.80 |
+| Thunder Bluff | High Rise, central platform | 1 | -1277.6 | 73.0 | 128.75 |
+| Undercity | Trade Quarter | 0 | 1637.2 | 240.1 | -43.10 |
+| Silvermoon City | Walk of Elders | 530 | 9738.0 | -7454.0 | 13.56 |
+
+### Neutral
+
+| City | Zone | Map | X | Y | Z |
+|------|------|-----|---|---|---|
+| Shattrath City | Terrace of Light | 530 | -1850.0 | 5436.0 | -12.10 |
+| Dalaran | Runeweaver Square | 571 | 5807.0 | 506.2 | 657.58 |
+| Booty Bay | Docks / Inn level | 0 | -14406.0 | 420.0 | 23.70 |
+
 ## Level Scaling (How It Works)
 
 After selecting a difficulty tier, players choose a scaling mode:
