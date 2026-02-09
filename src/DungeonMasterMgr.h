@@ -116,7 +116,7 @@ public:
 private:
     // Creature selection
     std::vector<SpawnPoint> GetSpawnPointsForMap(uint32 mapId);
-    uint32 SelectCreatureForTheme(const Theme* theme, uint8 bandMin, uint8 bandMax, bool isBoss);
+    uint32 SelectCreatureForTheme(const Theme* theme, bool isBoss);
 
     // Reward helpers
     void   GiveGoldReward(Player* player, uint32 amount);
@@ -153,7 +153,7 @@ private:
 
     // Creature pools (loaded from world DB once)
     std::unordered_map<uint32, std::vector<CreaturePoolEntry>> _creaturesByType;  // type → entries
-    std::unordered_map<uint32, std::vector<CreaturePoolEntry>> _bossCreatures;    // 10-lvl bracket → entries
+    std::unordered_map<uint32, std::vector<CreaturePoolEntry>> _bossCreatures;    // type → elite entries
 
     // Base stats per (unitClass, level) from creature_classlevelstats
     std::map<std::pair<uint8,uint8>, ClassLevelStatEntry> _classLevelStats;

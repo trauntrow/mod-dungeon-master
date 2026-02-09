@@ -111,93 +111,47 @@ void DungeonMasterMgr::LoadFromDB()
 // ---------------------------------------------------------------------------
 // LoadCreaturePools — build the themed creature & boss pools from world DB.
 //
-// Filtering strategy:
-//   - Exclude NPCs with gossip/vendor flags, non-hostile factions, scripted
-//     AI, world bosses, triggers, dummies, and water-only mobs.
-//   - Normal-rank (rank 0) → trash pool, keyed by creature type.
-//   - Elite / Rare Elite (rank 1,2,4) → boss pool, keyed by 10-level bracket.
+// LEVEL-AGNOSTIC DESIGN:  We load ALL valid combat creatures regardless of
+// their original template level.  SelectCreatureForTheme picks purely by
+// creature type, and applyLevelAndStats force-scales every creature to the
+// session's target level (level, HP, damage, armor, resistances, rank).
+// A level 80 Northrend ghoul picked for a level 14 session becomes a
+// proper level 14 mob with correct stats and no skull/"??" display.
+//
+// Pools:
+//   _creaturesByType : type → normal creatures (rank 0, rare rank 3 excluded)
+//   _bossCreatures   : type → elite/rare-elite creatures (rank 1, 2, 4)
+//
+// Minimal filtering — only exclude entries that are inherently broken when
+// summoned.  We force-override faction, flags, immunities, level, stats,
+// and everything else in applyLevelAndStats, so original template values
+// are irrelevant.  If SummonCreature fails (no model, bad entry), we
+// simply skip it (the nullptr check handles that).
 // ---------------------------------------------------------------------------
 void DungeonMasterMgr::LoadCreaturePools()
 {
     _creaturesByType.clear();
     _bossCreatures.clear();
 
+    // Ultra-minimal query: type for theming, level for bookkeeping, rank for boss/trash split
     QueryResult result = WorldDatabase.Query(
-        "SELECT ct.entry, ct.type, ct.minlevel, ct.maxlevel, ct.`rank` "
-        "FROM creature_template ct "
-        "LEFT JOIN creature_template_movement ctm ON ct.entry = ctm.CreatureId "
-        "WHERE ct.type > 0 AND ct.type <= 10 AND ct.type != 8 "      // valid combat types, skip Critter
-        "AND ct.minlevel > 0 AND ct.maxlevel <= 83 "
-        "AND ct.npcflag = 0 AND (ct.unit_flags & 2) = 0 "            // no gossip NPCs, no NON_ATTACKABLE
-        "AND ct.faction != 35 AND ct.faction != 7 "                   // not friendly
-        "AND ct.HealthModifier >= 1.0 "                                 // skip critter-like beasts
-        "AND (ct.flags_extra & 0x02) = 0 "                            // not civilian
-        "AND ct.ScriptName = '' AND ct.AIName = '' "                  // no scripted AI (avoids teleport/instakill)
-        "AND ct.mechanic_immune_mask = 0 "                            // skip highly-immune mobs
-        "AND (ct.flags_extra & 0x01000000) = 0 "
-        "AND (ct.unit_flags & 0x300) = 0 "                            // not immune to PC/NPC
-        "AND ct.name NOT LIKE '%[UNUSED]%' "
-        "AND ct.name NOT LIKE '%[PH]%' "
-        "AND ct.name NOT LIKE '%Test %' "
-        "AND ct.name NOT LIKE '%Test_%' "
-        "AND ct.name NOT LIKE '%DVREF%' "
-        "AND ct.name NOT LIKE '%[DNT]%' "
-        "AND ct.name NOT LIKE '%Trigger%' "
-        "AND ct.name NOT LIKE '%Invisible%' "
-        "AND ct.name NOT LIKE '%Dummy%' "
-        "AND ct.name NOT LIKE '%(%' "                                    // skip (1), (2) variant entries
-        "AND ct.name NOT LIKE '%Debug%' "
-        "AND ct.name NOT LIKE '%Template%' "
-        "AND ct.name NOT LIKE '%Copy of%' "
-        "AND ct.name NOT LIKE '% - DNT' "
-        "AND ct.name NOT LIKE '%Placeholder%' "
-        "AND ct.name NOT LIKE '%Visual%' "
-        "AND ct.name NOT LIKE '%Server%' "
-        "AND ct.name NOT LIKE '%Quest%' "                                // quest scripted mobs
-        "AND ct.name NOT LIKE '%zzOLD%' "
-        "AND (ct.subname = '' OR ct.subname IS NULL) "                   // no guild/title text under name
-        "AND ct.`rank` != 3 "                                         // exclude World Bosses
-        "AND (ctm.Ground IS NULL OR ctm.Ground != 0) "               // can walk
-        "ORDER BY ct.type, ct.minlevel");
+        "SELECT entry, type, minlevel, maxlevel, `rank` "
+        "FROM creature_template "
+        "WHERE type > 0 AND type <= 10 AND type != 8 "               // combat types, skip Critter
+        "AND minlevel > 0 AND maxlevel <= 83 "
+        "AND `rank` != 3 "                                            // not World Boss
+        "AND name NOT LIKE '%Trigger%' "
+        "AND name NOT LIKE '%Invisible%' "
+        "AND name NOT LIKE '%Dummy%' "
+        "AND name NOT LIKE '%[DNT]%' "
+        "AND name NOT LIKE '% - DNT' "
+        "AND name NOT LIKE '%zzOLD%' "
+        "ORDER BY type, minlevel");
 
     if (!result)
     {
-        // Fallback without movement table join
-        LOG_WARN("module", "DungeonMaster: creature_template_movement join failed — using fallback.");
-        result = WorldDatabase.Query(
-            "SELECT entry, type, minlevel, maxlevel, `rank` FROM creature_template "
-            "WHERE type > 0 AND type <= 10 AND type != 8 "
-            "AND minlevel > 0 AND maxlevel <= 83 "
-            "AND npcflag = 0 AND (unit_flags & 2) = 0 "
-            "AND faction != 35 AND faction != 7 "
-            "AND HealthModifier >= 1.0 "
-            "AND (flags_extra & 0x02) = 0 "
-            "AND ScriptName = '' AND AIName = '' "
-            "AND mechanic_immune_mask = 0 "
-            "AND (flags_extra & 0x01000000) = 0 "
-            "AND (unit_flags & 0x300) = 0 "
-            "AND name NOT LIKE '%[UNUSED]%' "
-            "AND name NOT LIKE '%[PH]%' "
-            "AND name NOT LIKE '%Test %' "
-            "AND name NOT LIKE '%Test_%' "
-            "AND name NOT LIKE '%DVREF%' "
-            "AND name NOT LIKE '%[DNT]%' "
-            "AND name NOT LIKE '%Trigger%' "
-            "AND name NOT LIKE '%Invisible%' "
-            "AND name NOT LIKE '%Dummy%' "
-            "AND name NOT LIKE '%(%' "
-            "AND name NOT LIKE '%Debug%' "
-            "AND name NOT LIKE '%Template%' "
-            "AND name NOT LIKE '%Copy of%' "
-            "AND name NOT LIKE '% - DNT' "
-            "AND name NOT LIKE '%Placeholder%' "
-            "AND name NOT LIKE '%Visual%' "
-            "AND name NOT LIKE '%Server%' "
-            "AND name NOT LIKE '%Quest%' "
-            "AND name NOT LIKE '%zzOLD%' "
-            "AND (subname = '' OR subname IS NULL) "
-            "AND `rank` != 3 "
-            "ORDER BY type, minlevel");
+        LOG_ERROR("module", "DungeonMaster: creature_template query returned NO results — check your world DB!");
+        return;
     }
 
     uint32 trashCount = 0, bossCount = 0;
@@ -213,13 +167,12 @@ void DungeonMasterMgr::LoadCreaturePools()
             e.MaxLevel = f[3].Get<uint8>();
             uint8 rank = f[4].Get<uint8>();
 
-            if (rank == 1 || rank == 2 || rank == 4)        // elite / rare-elite
+            if (rank == 1 || rank == 2 || rank == 4)        // elite / rare-elite → boss pool
             {
-                uint32 bracket = (e.MinLevel / 10) * 10;
-                _bossCreatures[bracket].push_back(e);
+                _bossCreatures[e.Type].push_back(e);
                 ++bossCount;
             }
-            else                                              // normal (rank 0)
+            else                                              // normal (rank 0) → trash pool
             {
                 _creaturesByType[e.Type].push_back(e);
                 ++trashCount;
@@ -229,6 +182,24 @@ void DungeonMasterMgr::LoadCreaturePools()
 
     LOG_INFO("module", "DungeonMaster: Loaded {} trash creatures, {} potential bosses.",
         trashCount, bossCount);
+
+    // Log per-type breakdown so admins can verify theme coverage
+    static const char* typeNames[] = {
+        "None", "Beast", "Dragonkin", "Demon", "Elemental",
+        "Giant", "Undead", "Humanoid", "Critter", "Mechanical", "NotSpecified"
+    };
+    for (const auto& [type, vec] : _creaturesByType)
+    {
+        const char* name = (type <= 10) ? typeNames[type] : "Unknown";
+        LOG_INFO("module", "DungeonMaster:   Trash type {} ({}): {} entries",
+            type, name, vec.size());
+    }
+    for (const auto& [type, vec] : _bossCreatures)
+    {
+        const char* name = (type <= 10) ? typeNames[type] : "Unknown";
+        LOG_INFO("module", "DungeonMaster:   Boss  type {} ({}): {} entries",
+            type, name, vec.size());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -823,13 +794,19 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
     auto& guidList = _instanceCreatureGuids[instanceId];
     guidList.clear();
 
-    LOG_INFO("module", "DungeonMaster: Populating session {} — band {}-{}, target lvl {}, HP x{:.2f}, DMG x{:.2f}",
-        session->SessionId, bandMin, bandMax, targetLevel, hpMult, dmgMult);
+    LOG_INFO("module", "DungeonMaster: Populating session {} — theme '{}', band {}-{}, target lvl {}, HP x{:.2f}, DMG x{:.2f}",
+        session->SessionId, theme->Name, bandMin, bandMax, targetLevel, hpMult, dmgMult);
 
     // Helper lambda: force a creature to the target level with proper stats.
-    auto applyLevelAndStats = [&](Creature* c, float extraHpMult, float extraDmgMult)
+    // This is the core of the level-agnostic design — ANY creature from level 1-83
+    // becomes a proper creature at targetLevel with correct HP/damage/armor/display.
+    // No skull icon, no "??" level, no elite dragon frame (unless it's a boss).
+    auto applyLevelAndStats = [&](Creature* c, float extraHpMult, float extraDmgMult, bool /*isBoss*/)
     {
-        // --- Force level ---
+        // --- Force level FIRST (before any stat calculations) ---
+        // This is what determines the client's level display.  The skull/"??"
+        // appears when the creature level is 10+ above the player; since we
+        // set it to targetLevel (near the player), it will show as a number.
         c->SetLevel(targetLevel);
 
         uint8 unitClass = c->GetCreatureTemplate()->unit_class;
@@ -865,11 +842,11 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
             c->UpdateDamagePhysical(BASE_ATTACK);
         }
 
-        // --- Armor ---
+        // --- Armor (from classlevelstats for the TARGET level) ---
         if (baseStats && baseStats->BaseArmor > 0)
             c->SetArmor(baseStats->BaseArmor);
 
-        // --- Clear spell resistances ---
+        // --- Clear ALL spell resistances (original template values are for original level) ---
         for (uint8 school = SPELL_SCHOOL_HOLY; school < MAX_SPELL_SCHOOL; ++school)
             c->SetResistance(SpellSchools(school), 0);
 
@@ -877,14 +854,19 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         for (uint32 mech = 1; mech < MAX_MECHANIC; ++mech)
             c->ApplySpellImmune(0, IMMUNITY_MECHANIC, mech, false);
 
+        // --- Clear spell immunities that might come from the template ---
+        c->ApplySpellImmune(0, IMMUNITY_SCHOOL, SPELL_SCHOOL_MASK_ALL, false);
+
         // --- Movement: idle at spawn, no wandering ---
         c->SetWanderDistance(0.0f);
         c->SetDefaultMovementType(IDLE_MOTION_TYPE);
         c->GetMotionMaster()->MoveIdle();
 
-        // --- CRITICAL: Force client to see updated level ---
-        // SummonCreature sends CREATE_OBJECT with the *template* level.
-        // Force a visibility refresh so clients receive updated fields.
+        // --- CRITICAL: Force full visibility refresh ---
+        // SummonCreature sends CREATE_OBJECT with the *template* level/rank.
+        // We need the client to receive updated fields.  On AzerothCore the
+        // cleanest way is to force a visibility update which re-sends all
+        // unit fields to nearby players.
         c->UpdateObjectVisibility(true);
 
         // Track this GUID for future cleanup
@@ -897,7 +879,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
     {
         if (sp.IsBossPosition) continue;
 
-        uint32 entry = SelectCreatureForTheme(theme, bandMin, bandMax, false);
+        uint32 entry = SelectCreatureForTheme(theme, false);
         if (!entry) continue;
 
         Creature* c = map->SummonCreature(entry, sp.Pos);
@@ -906,6 +888,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         c->SetFaction(14);               // hostile to all
         c->SetReactState(REACT_AGGRESSIVE);
         c->SetObjectScale(1.0f);
+        c->SetCorpseDelay(300);          // 5 min corpse before despawn
         c->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC
                                         | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_PACIFIED
                                         | UNIT_FLAG_STUNNED | UNIT_FLAG_FLEEING
@@ -918,7 +901,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         float eliteHpMult  = isElite ? sDMConfig->GetEliteHealthMult() : 1.0f;
         float eliteDmgMult = isElite ? 1.5f : 1.0f;
 
-        applyLevelAndStats(c, eliteHpMult, eliteDmgMult);
+        applyLevelAndStats(c, eliteHpMult, eliteDmgMult, false);
 
         SpawnedCreature sc;
         sc.Guid = c->GetGUID(); sc.Entry = entry;
@@ -935,7 +918,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         if (!sp.IsBossPosition || bossesSpawned >= sDMConfig->GetBossCount())
             continue;
 
-        uint32 entry = SelectCreatureForTheme(theme, bandMin, bandMax, true);
+        uint32 entry = SelectCreatureForTheme(theme, true);
         if (!entry) { LOG_WARN("module", "DungeonMaster: No boss candidate."); continue; }
 
         Creature* b = map->SummonCreature(entry, sp.Pos);
@@ -944,6 +927,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         b->SetFaction(14);
         b->SetReactState(REACT_AGGRESSIVE);
         b->SetObjectScale(1.0f);
+        b->SetCorpseDelay(600);          // 10 min corpse for bosses
         b->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC
                                         | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_PACIFIED
                                         | UNIT_FLAG_STUNNED | UNIT_FLAG_FLEEING
@@ -952,7 +936,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         b->SetImmuneToPC(false);
         b->SetImmuneToNPC(false);
 
-        applyLevelAndStats(b, sDMConfig->GetBossHealthMult(), 2.0f);
+        applyLevelAndStats(b, sDMConfig->GetBossHealthMult(), sDMConfig->GetBossDamageMult(), true);
 
         SpawnedCreature sc;
         sc.Guid = b->GetGUID(); sc.Entry = entry;
@@ -967,26 +951,24 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 }
 
 // ===========================================================================
-// Creature selection — LEVEL-AWARE THEMED POOL
+// Creature selection — LEVEL-AGNOSTIC, TYPE-ONLY
 //
-// Creatures are force-scaled to the session's target level, so the
-// original level doesn't affect gameplay.  However, we PREFER creatures
-// whose original level is near the session level for visual consistency
-// (a level-10 dungeon should look like level-10 content, not like
-// Icecrown mobs scaled down).
+// Original template level is IRRELEVANT.  We select purely by creature
+// type (matching the session's theme), then applyLevelAndStats force-scales
+// every creature to the session's target level.  A level 80 Northrend
+// ghoul becomes a proper level 14 mob — correct HP, damage, armor, and
+// the client displays "14" on the nameplate (no skull, no "??").
 //
-// Strategy:
-//   1. Try strict band: creatures within [bandMin, bandMax]
-//   2. Widen to ±10 of effective level
-//   3. Widen to ±20 of effective level
-//   4. Fall back to full pool
+// This means every theme has access to the ENTIRE creature database for
+// its type, not just the tiny slice at the session's native level range.
+// "Undead Rising" at level 14 can pick from Duskwood ghouls, Stratholme
+// skeletons, AND Icecrown geists — they'll all fight identically at 14.
 // ===========================================================================
-uint32 DungeonMasterMgr::SelectCreatureForTheme(const Theme* theme,
-    uint8 bandMin, uint8 bandMax, bool isBoss)
+uint32 DungeonMasterMgr::SelectCreatureForTheme(const Theme* theme, bool isBoss)
 {
     if (!theme) return 0;
 
-    // Build the set of acceptable creature types for the theme.
+    // Build the set of acceptable creature types for the theme
     std::set<uint32> types;
     bool anyType = false;
     for (uint32 t : theme->CreatureTypes)
@@ -995,83 +977,71 @@ uint32 DungeonMasterMgr::SelectCreatureForTheme(const Theme* theme,
         else types.insert(t);
     }
 
-    // Helper: check if a creature entry's level range overlaps [lo, hi]
-    auto inRange = [](const CreaturePoolEntry& e, uint8 lo, uint8 hi) -> bool
-    {
-        return e.MaxLevel >= lo && e.MinLevel <= hi;
-    };
-
-    // Helper: check if a creature type matches the theme
     auto typeMatch = [&](uint32 cType) -> bool
     {
         return anyType || types.count(cType);
     };
 
-    // Graduated level windows to try (strict → wider).
-    // Hard cap at ±8 to ensure creatures are always near the player's level.
-    // This prevents "??" display and keeps natural aggro ranges reasonable.
-    struct LevelWindow { uint8 lo; uint8 hi; };
-    uint8 midLevel = (bandMin / 2) + (bandMax / 2);
-    LevelWindow windows[] = {
-        { bandMin, bandMax },                                                // strict band (±3 of effective)
-        { static_cast<uint8>(midLevel > 5 ? midLevel - 5 : 1),
-          static_cast<uint8>(std::min<uint16>(midLevel + 5, 83)) },          // ±5
-        { static_cast<uint8>(midLevel > 8 ? midLevel - 8 : 1),
-          static_cast<uint8>(std::min<uint16>(midLevel + 8, 83)) },          // ±8 (hard cap)
-    };
+    std::vector<uint32> candidates;
 
-    for (const auto& win : windows)
+    if (isBoss)
     {
-        std::vector<uint32> candidates;
+        // --- Try themed elites first ---
+        for (const auto& [type, vec] : _bossCreatures)
+        {
+            if (!typeMatch(type)) continue;
+            for (const auto& e : vec)
+                candidates.push_back(e.Entry);
+        }
+
+        // --- Fallback: promote themed trash to boss (stats will be scaled up) ---
+        if (candidates.empty())
+        {
+            for (const auto& [type, vec] : _creaturesByType)
+            {
+                if (!typeMatch(type)) continue;
+                for (const auto& e : vec)
+                    candidates.push_back(e.Entry);
+            }
+        }
+    }
+    else
+    {
+        // --- Themed trash ---
+        for (const auto& [type, vec] : _creaturesByType)
+        {
+            if (!typeMatch(type)) continue;
+            for (const auto& e : vec)
+                candidates.push_back(e.Entry);
+        }
+    }
+
+    // --- Last resort: if theme has zero entries, use ANY type ---
+    if (candidates.empty() && !anyType)
+    {
+        LOG_WARN("module", "DungeonMaster: No '{}' creatures found — falling back to any type.",
+            theme->Name);
 
         if (isBoss)
         {
-            for (const auto& [bracket, vec] : _bossCreatures)
+            for (const auto& [type, vec] : _bossCreatures)
                 for (const auto& e : vec)
-                    if (typeMatch(e.Type) && inRange(e, win.lo, win.hi))
-                        candidates.push_back(e.Entry);
-
-            // If no elites, promote themed trash within this window
-            if (candidates.empty())
-            {
-                for (const auto& [t, vec] : _creaturesByType)
-                {
-                    if (!typeMatch(t)) continue;
-                    for (const auto& e : vec)
-                        if (inRange(e, win.lo, win.hi))
-                            candidates.push_back(e.Entry);
-                }
-            }
+                    candidates.push_back(e.Entry);
         }
-        else
+
+        if (candidates.empty())
         {
-            for (uint32 t : theme->CreatureTypes)
-            {
-                if (t == uint32(-1))
-                {
-                    for (const auto& [type, vec] : _creaturesByType)
-                        for (const auto& e : vec)
-                            if (inRange(e, win.lo, win.hi))
-                                candidates.push_back(e.Entry);
-                }
-                else
-                {
-                    auto it = _creaturesByType.find(t);
-                    if (it != _creaturesByType.end())
-                        for (const auto& e : it->second)
-                            if (inRange(e, win.lo, win.hi))
-                                candidates.push_back(e.Entry);
-                }
-            }
+            for (const auto& [type, vec] : _creaturesByType)
+                for (const auto& e : vec)
+                    candidates.push_back(e.Entry);
         }
+    }
 
-        if (!candidates.empty())
-        {
-            LOG_DEBUG("module", "DungeonMaster: Selected from [{}-{}] window ({} candidates, boss={})",
-                win.lo, win.hi, candidates.size(), isBoss);
-
-            return candidates[RandInt<size_t>(0, candidates.size() - 1)];
-        }
+    if (!candidates.empty())
+    {
+        LOG_DEBUG("module", "DungeonMaster: {} candidates for theme '{}' (boss={})",
+            candidates.size(), theme->Name, isBoss);
+        return candidates[RandInt<size_t>(0, candidates.size() - 1)];
     }
 
     LOG_ERROR("module", "DungeonMaster: ZERO candidates for theme '{}' (boss={})",
