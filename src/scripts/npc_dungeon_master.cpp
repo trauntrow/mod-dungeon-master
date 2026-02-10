@@ -76,6 +76,8 @@ public:
         }
         if (sDungeonMasterMgr->GetSessionByPlayer(player->GetGUID()))
         {
+            LOG_INFO("module", "DungeonMaster: NPC blocked {} — still in active session",
+                player->GetName());
             ChatHandler(player->GetSession()).SendSysMessage(
                 "|cFFFF0000[Dungeon Master]|r You are already in an active challenge!");
             player->PlayerTalkClass->SendCloseGossip();
@@ -84,6 +86,8 @@ public:
         if (sDungeonMasterMgr->IsOnCooldown(player->GetGUID()))
         {
             uint32 rem  = sDungeonMasterMgr->GetRemainingCooldown(player->GetGUID());
+            LOG_INFO("module", "DungeonMaster: NPC blocked {} — cooldown {}s remaining",
+                player->GetName(), rem);
             char buf[256];
             snprintf(buf, sizeof(buf),
                 "|cFFFFFF00[Dungeon Master]|r Wait |cFFFFFFFF%u|r min |cFFFFFFFF%u|r sec before your next challenge.",

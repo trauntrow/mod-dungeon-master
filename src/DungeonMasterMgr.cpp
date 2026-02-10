@@ -1582,6 +1582,9 @@ void DungeonMasterMgr::EndSession(uint32 sessionId, bool success)
 
     Session& s = it->second;
 
+    LOG_INFO("module", "DungeonMaster: EndSession {} — success={}, state={}, players={}",
+        sessionId, success, static_cast<int>(s.State), s.Players.size());
+
     for (const auto& pd : s.Players)
         if (Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid))
             ChatHandler(p->GetSession()).SendSysMessage(

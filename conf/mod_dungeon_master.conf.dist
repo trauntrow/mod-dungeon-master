@@ -184,7 +184,7 @@ DungeonMaster.Theme.20 = ""
 
 #    DungeonMaster.Cooldown.Minutes (0 = no cooldown)
 #        Default: 5
-DungeonMaster.Cooldown.Minutes = 5
+DungeonMaster.Cooldown.Minutes = 0
 
 #    DungeonMaster.TimeLimit.Enable       Default: 0
 DungeonMaster.TimeLimit.Enable = 0
