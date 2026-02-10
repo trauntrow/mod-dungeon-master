@@ -88,12 +88,12 @@ DungeonMaster.Scaling.EliteDamageMult = 1.5
 #    DungeonMaster.Scaling.BossHealthMult
 #        Health multiplier for bosses (on top of difficulty)
 #        Default: 15.0
-DungeonMaster.Scaling.BossHealthMult = 15.0
+DungeonMaster.Scaling.BossHealthMult = 8.0
 
 #    DungeonMaster.Scaling.BossDamageMult
 #        Damage multiplier for bosses
 #        Default: 2.5
-DungeonMaster.Scaling.BossDamageMult = 2.5
+DungeonMaster.Scaling.BossDamageMult = 1.5
 
 ###############################################################################
 # REWARDS

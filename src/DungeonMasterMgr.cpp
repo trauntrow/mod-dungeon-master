@@ -146,22 +146,26 @@ void DungeonMasterMgr::LoadCreaturePools()
         "AND ScriptName = '' "                                         // no C++ scripts (they override our scaling)
         "AND npcflag = 0 "                                             // no vendors/quest givers/gossip NPCs
         "AND (unit_flags & 2) = 0 "                                    // no NON_ATTACKABLE
-        "AND name NOT LIKE '%Trigger%' "
-        "AND name NOT LIKE '%Invisible%' "
-        "AND name NOT LIKE '%Dummy%' "
-        "AND name NOT LIKE '%[DNT]%' "
-        "AND name NOT LIKE '% - DNT' "
-        "AND name NOT LIKE '%zzOLD%' "
-        "AND name NOT LIKE '%(%' "                                     // no variant entries like "Skeleton (2)"
+        "AND (subname = '' OR subname IS NULL) "                       // no guild/title text under name
         "AND name NOT LIKE '%[UNUSED]%' "
         "AND name NOT LIKE '%[PH]%' "
         "AND name NOT LIKE '%Test %' "
         "AND name NOT LIKE '%Test_%' "
+        "AND name NOT LIKE '%DVREF%' "
+        "AND name NOT LIKE '%[DNT]%' "
+        "AND name NOT LIKE '%Trigger%' "
+        "AND name NOT LIKE '%Invisible%' "
+        "AND name NOT LIKE '%Dummy%' "
+        "AND name NOT LIKE '%(%' "                                     // skip (1), (2) variant entries
         "AND name NOT LIKE '%Debug%' "
         "AND name NOT LIKE '%Template%' "
         "AND name NOT LIKE '%Copy of%' "
+        "AND name NOT LIKE '% - DNT' "
         "AND name NOT LIKE '%Placeholder%' "
-        "AND name NOT LIKE '%DVREF%' "
+        "AND name NOT LIKE '%Visual%' "
+        "AND name NOT LIKE '%Server%' "
+        "AND name NOT LIKE '%Quest%' "                                 // quest scripted mobs
+        "AND name NOT LIKE '%zzOLD%' "
         "ORDER BY type, minlevel");
 
     if (!result)
@@ -852,7 +856,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
             if (atkTime <= 0.0f) atkTime = 2.0f;
 
             float minDmg = (dmgBase + apBonus) * atkTime * dmgMult * extraDmgMult;
-            float maxDmg = ((dmgBase * 1.5f) + apBonus) * atkTime * dmgMult * extraDmgMult;
+            float maxDmg = ((dmgBase * 1.15f) + apBonus) * atkTime * dmgMult * extraDmgMult;
 
             minDmg = std::max(1.0f, minDmg);
             maxDmg = std::max(minDmg, maxDmg);
