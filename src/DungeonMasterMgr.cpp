@@ -1154,7 +1154,8 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 
         // Red glow on affix-affected creatures so players can see they're empowered
         if (affixHpMult > 1.0f || affixDmgMult > 1.0f)
-            c->AddAura(8599, c);  // Enrage visual
+            if (Aura* a = c->AddAura(8599, c))
+                a->SetDuration(-1);
 
         SpawnedCreature sc;
         sc.Guid = c->GetGUID(); sc.Entry = entry;
@@ -1199,7 +1200,8 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
             sDMConfig->GetBossDamageMult() * bossAffixDmgMult, true);
 
         if (bossAffixHpMult > 1.0f || bossAffixDmgMult > 1.0f)
-            b->AddAura(8599, b);  // Enrage visual
+            if (Aura* a = b->AddAura(8599, b))
+                a->SetDuration(-1);
 
         SpawnedCreature sc;
         sc.Guid = b->GetGUID(); sc.Entry = entry;
