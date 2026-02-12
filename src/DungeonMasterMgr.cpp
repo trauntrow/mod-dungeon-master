@@ -129,37 +129,38 @@ void DungeonMasterMgr::LoadCreaturePools()
 
     // Type for theming, rank for boss/trash split, ScriptName='' to avoid scripted mobs
     QueryResult result = WorldDatabase.Query(
-        "SELECT entry, type, minlevel, maxlevel, `rank` "
-        "FROM creature_template "
-        "WHERE type > 0 AND type <= 10 AND type != 8 "               // combat types, skip Critter
-        "AND minlevel > 0 AND maxlevel <= 83 "
-        "AND `rank` != 3 "                                            // not World Boss
-        "AND InhabitType != 2 "                                         // no water-only creatures
-        "AND VehicleId = 0 "                                           // not a vehicle/chair/cannon
-        "AND ScriptName = '' "                                         // no C++ scripts (they override our scaling)
-        "AND npcflag = 0 "                                             // no vendors/quest givers/gossip NPCs
-        "AND (unit_flags & 2) = 0 "                                    // no NON_ATTACKABLE
-        "AND (subname = '' OR subname IS NULL) "                       // no guild/title text under name
-        "AND name NOT LIKE '%[UNUSED]%' "
-        "AND name NOT LIKE '%[PH]%' "
-        "AND name NOT LIKE '%Test %' "
-        "AND name NOT LIKE '%Test_%' "
-        "AND name NOT LIKE '%DVREF%' "
-        "AND name NOT LIKE '%[DNT]%' "
-        "AND name NOT LIKE '%Trigger%' "
-        "AND name NOT LIKE '%Invisible%' "
-        "AND name NOT LIKE '%Dummy%' "
-        "AND name NOT LIKE '%(%' "                                     // skip (1), (2) variant entries
-        "AND name NOT LIKE '%Debug%' "
-        "AND name NOT LIKE '%Template%' "
-        "AND name NOT LIKE '%Copy of%' "
-        "AND name NOT LIKE '% - DNT' "
-        "AND name NOT LIKE '%Placeholder%' "
-        "AND name NOT LIKE '%Visual%' "
-        "AND name NOT LIKE '%Server%' "
-        "AND name NOT LIKE '%Quest%' "                                 // quest scripted mobs
-        "AND name NOT LIKE '%zzOLD%' "
-        "ORDER BY type, minlevel");
+        "SELECT ct.entry, ct.type, ct.minlevel, ct.maxlevel, ct.`rank` "
+        "FROM creature_template ct "
+        "LEFT JOIN creature_template_movement ctm ON ct.entry = ctm.CreatureId "
+        "WHERE ct.type > 0 AND ct.type <= 10 AND ct.type != 8 "       // combat types, skip Critter
+        "AND ct.minlevel > 0 AND ct.maxlevel <= 83 "
+        "AND ct.`rank` != 3 "                                          // not World Boss
+        "AND (ctm.Ground IS NULL OR ctm.Ground != 0) "                // no water-only creatures
+        "AND ct.VehicleId = 0 "                                        // not a vehicle/chair/cannon
+        "AND ct.ScriptName = '' "                                      // no C++ scripts (they override our scaling)
+        "AND ct.npcflag = 0 "                                          // no vendors/quest givers/gossip NPCs
+        "AND (ct.unit_flags & 2) = 0 "                                 // no NON_ATTACKABLE
+        "AND (ct.subname = '' OR ct.subname IS NULL) "                 // no guild/title text under name
+        "AND ct.name NOT LIKE '%[UNUSED]%' "
+        "AND ct.name NOT LIKE '%[PH]%' "
+        "AND ct.name NOT LIKE '%Test %' "
+        "AND ct.name NOT LIKE '%Test_%' "
+        "AND ct.name NOT LIKE '%DVREF%' "
+        "AND ct.name NOT LIKE '%[DNT]%' "
+        "AND ct.name NOT LIKE '%Trigger%' "
+        "AND ct.name NOT LIKE '%Invisible%' "
+        "AND ct.name NOT LIKE '%Dummy%' "
+        "AND ct.name NOT LIKE '%(%' "                                  // skip (1), (2) variant entries
+        "AND ct.name NOT LIKE '%Debug%' "
+        "AND ct.name NOT LIKE '%Template%' "
+        "AND ct.name NOT LIKE '%Copy of%' "
+        "AND ct.name NOT LIKE '% - DNT' "
+        "AND ct.name NOT LIKE '%Placeholder%' "
+        "AND ct.name NOT LIKE '%Visual%' "
+        "AND ct.name NOT LIKE '%Server%' "
+        "AND ct.name NOT LIKE '%Quest%' "                              // quest scripted mobs
+        "AND ct.name NOT LIKE '%zzOLD%' "
+        "ORDER BY ct.type, ct.minlevel");
 
     if (!result)
     {
@@ -241,13 +242,14 @@ void DungeonMasterMgr::LoadDungeonBossPool()
         "SELECT DISTINCT ct.entry, ct.name, ct.type, ct.minlevel, ct.maxlevel "
         "FROM creature_template ct "
         "JOIN creature c ON c.id1 = ct.entry "
+        "LEFT JOIN creature_template_movement ctm ON ct.entry = ctm.CreatureId "
         "WHERE c.map IN (%s) "
         "AND ct.`rank` IN (1, 2) "
         "AND ct.ScriptName != '' "
         "AND ct.type > 0 AND ct.type <= 10 "
         "AND ct.minlevel > 0 "
         "AND ct.VehicleId = 0 "
-        "AND ct.InhabitType != 2 "              // no water-only creatures
+        "AND (ctm.Ground IS NULL OR ctm.Ground != 0) "  // no water-only creatures
         "AND (ct.unit_flags & 2) = 0 "       // not NON_ATTACKABLE
         "AND ct.name NOT LIKE '%%Trigger%%' "
         "AND ct.name NOT LIKE '%%Invisible%%' "
