@@ -132,7 +132,7 @@ Creatures are force-scaled to the session's target level regardless of their ori
 
 ## Loot
 
-Creature drops gold. Item drops use WoW-style rates:
+Creatures drops gold. Item drops use WoW-style rates:
 https://github.com/InstanceForge/mod-dungeon-master
 | Creature | Gold | Items |
 |----------|------|-------|
