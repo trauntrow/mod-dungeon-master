@@ -130,20 +130,6 @@ Creatures are force-scaled to the session's target level regardless of their ori
 
 ---
 
-## Loot
-
-Creatures drops gold. Item drops use WoW-style rates:
-https://github.com/InstanceForge/mod-dungeon-master
-| Creature | Gold | Items |
-|----------|------|-------|
-| Trash mob | Always | 15% grey/white junk, 3% green equipment |
-| Elite | Always | 40% green equipment |
-| Boss | Always | 2 guaranteed blue/purple equipment pieces |
-
-All equipment respects party class proficiencies — cloth users get cloth, plate users get plate, etc. Roguelike mode provides tier-scaled rewards with increasing epic chance at higher tiers.
-
----
-
 ## Configuration
 
 All settings live in `mod_dungeon_master.conf`. Key options:
