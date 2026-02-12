@@ -655,7 +655,7 @@ bool DungeonMasterMgr::TeleportPartyIn(Session* session)
             char buf[256];
             snprintf(buf, sizeof(buf),
                 "|cFF00FF00[Dungeon Master]|r Welcome to |cFFFFFFFF%s|r! "
-                "Defeat all enemies and the boss to claim your reward.",
+                "Defeat the boss to claim your reward.",
                 dg->Name.c_str());
             ChatHandler(p->GetSession()).SendSysMessage(buf);
 
