@@ -638,6 +638,14 @@ bool DungeonMasterMgr::TeleportPartyIn(Session* session)
         pd.ReturnPosition = { p->GetPositionX(), p->GetPositionY(),
                               p->GetPositionZ(), p->GetOrientation() };
 
+        // Resurrect dead players so they can teleport (roguelike floor transitions, etc.)
+        if (!p->IsAlive())
+        {
+            p->RemoveFlag(PLAYER_FIELD_BYTES, PLAYER_FIELD_BYTE_NO_RELEASE_WINDOW);
+            p->ResurrectPlayer(1.0f);
+            p->SpawnCorpseBones();
+        }
+
         if (p->TeleportTo(session->MapId, ent.GetPositionX(), ent.GetPositionY(),
                           ent.GetPositionZ(), ent.GetOrientation()))
         {
@@ -1086,8 +1094,11 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         c->SetDefaultMovementType(IDLE_MOTION_TYPE);
         c->GetMotionMaster()->MoveIdle();
 
-        // --- Install custom AI ---
-        c->SetAI(new DungeonMasterCreatureAI(c));
+        // --- Install custom AI for trash only ---
+        // Bosses keep their native ScriptName AI for proper mechanics;
+        // loot/kill credit is handled by OnCreatureKill in dm_player_script.
+        if (!isBoss)
+            c->SetAI(new DungeonMasterCreatureAI(c));
 
         // Force visibility refresh or client won't see the creature
         c->UpdateObjectVisibility(true);
@@ -1835,7 +1846,7 @@ void DungeonMasterMgr::DistributeRoguelikeRewards(uint32 tier, uint8 effectiveLe
 
         if (p->GetSession())
             ChatHandler(p->GetSession()).SendSysMessage(
-                "|cFF00FFFF[Roguelike]|r Rewards mailed! Check your mailbox.");
+                "|cFF00FFFF[Roguelike]|r Rewards added to your inventory!");
     }
 }
 
