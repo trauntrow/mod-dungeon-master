@@ -820,7 +820,11 @@ std::string RoguelikeMgr::GetActiveAffixNames(uint32 runId) const
     return result;
 }
 
-// Buff system (+10% all stats per tier via BoK aura)
+// Buff system (+10% all stats per stack via direct stat modification)
+// In 3.3.5 clients, spell tooltips are hardcoded in the DBC and can't be updated
+// Buff system (+10% all stats per stack via BoK aura with visual stack count)
+// SetStackAmount(n) both displays the stack number on the buff icon AND
+// auto-multiplies the base 10% effect by n (so 3 stacks = 30%).
 
 static constexpr uint32 BUFF_SPELL_ID = 25898;  // Greater Blessing of Kings
 
@@ -828,21 +832,14 @@ void RoguelikeMgr::ApplyBuffAura(Player* player, uint32 stacks)
 {
     if (!player || !player->IsInWorld() || stacks == 0) return;
 
-    int32 totalPct = static_cast<int32>(BUFF_PCT_PER_STACK * stacks);
-
-    // Remove old aura before reapplying
+    // Remove old aura before reapplying with new stack count
     player->RemoveAura(BUFF_SPELL_ID);
 
     Aura* aura = player->AddAura(BUFF_SPELL_ID, player);
     if (aura)
     {
-        // Override the default 10% to our desired value
-        for (uint8 i = 0; i < MAX_SPELL_EFFECTS; ++i)
-        {
-            if (AuraEffect* eff = aura->GetEffect(i))
-                eff->ChangeAmount(totalPct);
-        }
-        aura->SetMaxDuration(-1);  // permanent
+        aura->SetStackAmount(static_cast<uint8>(stacks));
+        aura->SetMaxDuration(-1);
         aura->SetDuration(-1);
     }
 }
@@ -858,7 +855,6 @@ void RoguelikeMgr::IncrementBuffStacks(uint32 runId)
     }
 
     ++run->BuffStacks;
-
 
     for (const auto& pd : run->Players)
     {

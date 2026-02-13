@@ -78,7 +78,7 @@ struct RoguelikeRun
     uint32  DungeonsCleared      = 0;
     uint32  PreviousMapId        = 0;
 
-    uint32  BuffStacks = 0;                 // +10% all stats per stack (BoK aura)
+    uint32  BuffStacks = 0;                 // +10% all stats per stack (BoK aura with visual stacks)
 
     std::vector<RoguelikeAffix> ActiveAffixes;
     std::vector<RoguelikePlayerData> Players;

@@ -68,7 +68,9 @@ public:
             return;
 
         float aggroRange = sDMConfig->GetAggroRadius();
-        if (me->IsWithinDistInMap(player, aggroRange) && me->IsHostileTo(player))
+        if (me->IsWithinDistInMap(player, aggroRange)
+            && me->IsHostileTo(player)
+            && me->IsWithinLOSInMap(player))
         {
             me->SetInCombatWith(player);
             player->SetInCombatWith(me);
@@ -107,7 +109,9 @@ public:
                         continue;
 
                     float dist = me->GetDistance(p);
-                    if (dist < closest && me->IsHostileTo(p))
+                    if (dist < closest
+                        && me->IsHostileTo(p)
+                        && me->IsWithinLOSInMap(p))
                     {
                         closest = dist;
                         target = p;
