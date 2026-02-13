@@ -86,14 +86,15 @@ DungeonMaster.Scaling.EliteHealthMult = 2.0
 DungeonMaster.Scaling.EliteDamageMult = 1.5
 
 #    DungeonMaster.Scaling.BossHealthMult
-#        Health multiplier for bosses (on top of difficulty)
-#        Default: 15.0
-DungeonMaster.Scaling.BossHealthMult = 15.0
+#        Health multiplier for bosses (on top of party scaling)
+#        Default: 8.0
+DungeonMaster.Scaling.BossHealthMult = 8.0
 
 #    DungeonMaster.Scaling.BossDamageMult
-#        Damage multiplier for bosses
-#        Default: 2.5
-DungeonMaster.Scaling.BossDamageMult = 2.5
+#        Damage multiplier for bosses (applied on top of party scaling only,
+#        NOT stacked with the difficulty tier's DamageMultiplier)
+#        Default: 1.5
+DungeonMaster.Scaling.BossDamageMult = 1.5
 
 ###############################################################################
 # REWARDS
@@ -139,7 +140,7 @@ DungeonMaster.Dungeon.EliteChance = 20
 #        Controls how far away a mob will detect and aggro players.
 #        Default: 15.0  (reduced from standard WoW ~20-45 range)
 #        Lower values (8-12) make dungeons feel less "swarm-y".
-#        Creatures are set to idle at their spawn points with no wandering.
+#        Creatures patrol a 5 yd radius around their spawn points.
 DungeonMaster.Dungeon.AggroRadius = 15.0
 
 #    DungeonMaster.Dungeon.Whitelist

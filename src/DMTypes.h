@@ -90,6 +90,14 @@ struct SpawnedCreature
     bool        IsDead     = false;
 };
 
+struct PendingPhaseCheck
+{
+    Position    DeathPos;
+    uint64      DeathTime  = 0;
+    uint32      OrigEntry  = 0;
+    bool        Resolved   = false;
+};
+
 struct PlayerSessionData
 {
     ObjectGuid  PlayerGuid;
@@ -124,6 +132,7 @@ struct Session
     std::vector<PlayerSessionData>  Players;
     std::vector<SpawnedCreature>    SpawnedCreatures;
     std::vector<SpawnPoint>         SpawnPoints;
+    std::vector<PendingPhaseCheck>  PendingPhaseChecks;
 
     uint32  TotalMobs   = 0;
     uint32  MobsKilled  = 0;

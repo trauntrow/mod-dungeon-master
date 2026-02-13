@@ -47,17 +47,90 @@ static T RandInt(T lo, T hi) { return std::uniform_int_distribution<T>(lo, hi)(t
 
 static float RandFloat(float lo, float hi) { return std::uniform_real_distribution<float>(lo, hi)(tRng); }
 
-// Basic aggressive AI for DM-spawned creatures; hooks JustDied for loot
+// Aggressive AI for DM-spawned creatures; patrols 5 yd radius, active aggro, hooks JustDied for loot
 class DungeonMasterCreatureAI : public CreatureAI
 {
 public:
-    explicit DungeonMasterCreatureAI(Creature* creature) : CreatureAI(creature) {}
+    explicit DungeonMasterCreatureAI(Creature* creature)
+        : CreatureAI(creature), _patrolStarted(false), _aggroScanTimer(0) {}
 
-    void UpdateAI(uint32 /*diff*/) override
+    // Active aggro detection — overrides the default which has many silent skips
+    void MoveInLineOfSight(Unit* who) override
+    {
+        if (!who || !me->IsAlive() || me->IsInCombat() || me->HasReactState(REACT_PASSIVE))
+            return;
+
+        if (who->GetTypeId() != TYPEID_PLAYER)
+            return;
+
+        Player* player = who->ToPlayer();
+        if (!player || !player->IsAlive() || player->IsGameMaster())
+            return;
+
+        float aggroRange = sDMConfig->GetAggroRadius();
+        if (me->IsWithinDistInMap(player, aggroRange) && me->IsHostileTo(player))
+        {
+            me->SetInCombatWith(player);
+            player->SetInCombatWith(me);
+            me->AddThreat(player, 1.0f);
+            AttackStart(player);
+        }
+    }
+
+    void UpdateAI(uint32 diff) override
     {
         if (!UpdateVictim())
+        {
+            // Start random patrol movement when idle
+            if (!_patrolStarted && me->IsAlive())
+            {
+                me->GetMotionMaster()->MoveRandom(5.0f);
+                _patrolStarted = true;
+            }
+
+            // Fallback aggro scan every 1 second for cases where MoveInLineOfSight
+            // doesn't fire (inactive grids, summoned creature edge cases)
+            _aggroScanTimer += diff;
+            if (_aggroScanTimer >= 1000 && me->IsAlive())
+            {
+                _aggroScanTimer = 0;
+                float aggroRange = sDMConfig->GetAggroRadius();
+
+                Map::PlayerList const& players = me->GetMap()->GetPlayers();
+                float closest = aggroRange;
+                Player* target = nullptr;
+
+                for (auto const& itr : players)
+                {
+                    Player* p = itr.GetSource();
+                    if (!p || !p->IsAlive() || p->IsGameMaster())
+                        continue;
+
+                    float dist = me->GetDistance(p);
+                    if (dist < closest && me->IsHostileTo(p))
+                    {
+                        closest = dist;
+                        target = p;
+                    }
+                }
+
+                if (target)
+                {
+                    me->SetInCombatWith(target);
+                    target->SetInCombatWith(me);
+                    me->AddThreat(target, 1.0f);
+                    AttackStart(target);
+                }
+            }
             return;
+        }
         DoMeleeAttackIfReady();
+    }
+
+    void EnterEvadeMode(EvadeReason /*why*/) override
+    {
+        _patrolStarted = false;
+        CreatureAI::EnterEvadeMode();
     }
 
     void JustDied(Unit* killer) override
@@ -65,6 +138,10 @@ public:
         CreatureAI::JustDied(killer);
         sDungeonMasterMgr->OnCreatureDeathHook(me);
     }
+
+private:
+    bool   _patrolStarted;
+    uint32 _aggroScanTimer;
 };
 
 // Session helper implementations (declared in DMTypes.h)
@@ -1021,6 +1098,17 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         session->SessionId, theme->Name, bandMin, bandMax, targetLevel, hpMult, dmgMult);
 
     // Force-scale creature to target level
+    // Compute a boss-specific damage multiplier that only includes party scaling,
+    // NOT the difficulty tier's DamageMultiplier (to avoid double-stacking).
+    float bossOnlyDmgMult;
+    {
+        uint32 n = session->Players.size();
+        if (n <= 1) bossOnlyDmgMult = sDMConfig->GetSoloMultiplier();
+        else        bossOnlyDmgMult = 1.0f + (n - 1) * sDMConfig->GetPerPlayerDamageMult();
+        if (session->RoguelikeRunId != 0)
+            bossOnlyDmgMult *= sRoguelikeMgr->GetTierDamageMultiplier(session->RoguelikeRunId);
+    }
+
     auto applyLevelAndStats = [&](Creature* c, float extraHpMult, float extraDmgMult, bool isBoss)
     {
     
@@ -1047,7 +1135,10 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         c->SetMaxHealth(hp);
         c->SetHealth(hp);
 
-    
+        // For bosses, use party-only scaling (bossOnlyDmgMult) instead of the full
+        // tier+party dmgMult to prevent double-stacking tier DamageMultiplier with BossDamageMult
+        float effectiveDmgMult = isBoss ? bossOnlyDmgMult : dmgMult;
+
         if (baseStats)
         {
             float dmgBase  = baseStats->BaseDamage;
@@ -1055,8 +1146,8 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
             float atkTime  = static_cast<float>(c->GetCreatureTemplate()->BaseAttackTime) / 1000.0f;
             if (atkTime <= 0.0f) atkTime = 2.0f;
 
-            float minDmg = (dmgBase + apBonus) * atkTime * dmgMult * extraDmgMult;
-            float maxDmg = ((dmgBase * 1.15f) + apBonus) * atkTime * dmgMult * extraDmgMult;
+            float minDmg = (dmgBase + apBonus) * atkTime * effectiveDmgMult * extraDmgMult;
+            float maxDmg = ((dmgBase * 1.15f) + apBonus) * atkTime * effectiveDmgMult * extraDmgMult;
 
             minDmg = std::max(1.0f, minDmg);
             maxDmg = std::max(minDmg, maxDmg);
@@ -1089,16 +1180,41 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         // --- Clear spell immunities that might come from the template ---
         c->ApplySpellImmune(0, IMMUNITY_SCHOOL, SPELL_SCHOOL_MASK_ALL, false);
 
-        // --- Movement: idle at spawn, no wandering ---
-        c->SetWanderDistance(0.0f);
-        c->SetDefaultMovementType(IDLE_MOTION_TYPE);
-        c->GetMotionMaster()->MoveIdle();
+        // --- Movement ---
+        if (isBoss)
+        {
+            // Bosses idle at spawn — they'll engage when players approach
+            c->SetWanderDistance(0.0f);
+            c->SetDefaultMovementType(IDLE_MOTION_TYPE);
+            c->GetMotionMaster()->MoveIdle();
+        }
+        else
+        {
+            // Trash mobs patrol a 5 yd radius around their spawn point
+            c->SetWanderDistance(5.0f);
+            c->SetDefaultMovementType(RANDOM_MOTION_TYPE);
+            c->GetMotionMaster()->MoveRandom(5.0f);
+        }
 
-        // --- Install custom AI for trash only ---
-        // Bosses keep their native ScriptName AI for proper mechanics;
-        // loot/kill credit is handled by OnCreatureKill in dm_player_script.
-        if (!isBoss)
-            c->SetAI(new DungeonMasterCreatureAI(c));
+        // --- Strip native abilities from bosses ---
+        // Boss templates come from all dungeon tiers.  Their scripted spells have
+        // hard-coded damage values designed for their original level range, which
+        // are NOT affected by our stat scaling.  A level-80 boss spell would
+        // one-shot a level-25 party.  We replace the boss AI with our custom
+        // melee-only AI below, and strip any pre-applied auras here so passive
+        // procs and combat triggers don't fire unscaled damage.  Bosses still
+        // keep their model, name, and gold-dragon boss frame.
+        if (isBoss)
+        {
+            c->RemoveAllAuras();
+            // Restore health after aura strip (some auras modify max HP)
+            c->SetHealth(c->GetMaxHealth());
+        }
+
+        // --- Install custom AI for all spawned creatures ---
+        // Both trash and bosses use DungeonMasterCreatureAI for reliable
+        // aggro detection, properly-scaled melee damage, and JustDied hook.
+        c->SetAI(new DungeonMasterCreatureAI(c));
 
         // Force visibility refresh or client won't see the creature
         c->UpdateObjectVisibility(true);
@@ -1130,6 +1246,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         c->SetUInt32Value(UNIT_FIELD_FLAGS_2, 0);
         c->SetImmuneToPC(false);
         c->SetImmuneToNPC(false);
+        c->setActive(true);             // Keep creature in grid update cycle for aggro detection
 
         bool isElite = (RandInt<uint32>(1, 100) <= sDMConfig->GetEliteChance());
 
@@ -1188,6 +1305,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         b->SetUInt32Value(UNIT_FIELD_FLAGS_2, 0);
         b->SetImmuneToPC(false);
         b->SetImmuneToNPC(false);
+        b->setActive(true);             // Keep creature in grid update cycle for aggro detection
 
         // Roguelike affix multipliers for bosses
         float bossAffixHpMult = 1.0f, bossAffixDmgMult = 1.0f, _unused = 1.0f;
@@ -1381,46 +1499,29 @@ void DungeonMasterMgr::HandleCreatureDeath(Creature* creature, Session* session)
 
             if (sc.IsBoss)
             {
-                ++session->BossesKilled;
-                LOG_INFO("module", "DungeonMaster: Boss killed! Progress: {}/{}",
-                    session->BossesKilled, session->TotalBosses);
-                HandleBossDeath(session);
+                // Multi-phase support: defer boss kill count to allow phase transitions
+                PendingPhaseCheck ppc;
+                ppc.DeathPos   = { creature->GetPositionX(), creature->GetPositionY(),
+                                   creature->GetPositionZ(), creature->GetOrientation() };
+                ppc.DeathTime  = GameTime::GetGameTime().count();
+                ppc.OrigEntry  = creature->GetEntry();
+                ppc.Resolved   = false;
+                session->PendingPhaseChecks.push_back(ppc);
+
+                LOG_INFO("module", "DungeonMaster: Boss '{}' died — deferring kill count for phase check",
+                    creature->GetName());
             }
             else
             {
                 ++session->MobsKilled;
-            }
-
-            // Credit all party members with the kill
-            for (auto& pd : session->Players)
-            {
-                if (sc.IsBoss) ++pd.BossesKilled;
-                else           ++pd.MobsKilled;
+                for (auto& pd : session->Players)
+                    ++pd.MobsKilled;
             }
             break;
         }
     }
 
-    // Check completion
-    if (session->IsActive() && session->TotalBosses > 0
-        && session->BossesKilled >= session->TotalBosses)
-    {
-        session->State   = SessionState::Completed;
-        session->EndTime = GameTime::GetGameTime().count();
-
-        LOG_INFO("module", "DungeonMaster: Session {} completed! All bosses defeated.", session->SessionId);
-
-        for (const auto& pd : session->Players)
-            if (Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid))
-            {
-                char buf[256];
-                snprintf(buf, sizeof(buf),
-                    "|cFF00FF00[Dungeon Master]|r Congratulations! Dungeon complete! "
-                    "Rewards in |cFFFFFFFF%u|r seconds...",
-                    sDMConfig->GetCompletionTeleportDelay());
-                ChatHandler(p->GetSession()).SendSysMessage(buf);
-            }
-    }
+    // Completion is now handled by the phase check system in Update()
 }
 
 void DungeonMasterMgr::HandleBossDeath(Session* session)
@@ -1478,47 +1579,29 @@ void DungeonMasterMgr::OnCreatureDeathHook(Creature* creature)
 
                 if (sc.IsBoss)
                 {
-                    ++session.BossesKilled;
-                    LOG_INFO("module", "DungeonMaster: Boss killed via AI hook! Progress: {}/{}",
-                        session.BossesKilled, session.TotalBosses);
-                    HandleBossDeath(&session);
+                    // Multi-phase support: defer the boss kill count for a few seconds
+                    // to check if a phase-2 creature spawns near the death location.
+                    PendingPhaseCheck ppc;
+                    ppc.DeathPos   = { creature->GetPositionX(), creature->GetPositionY(),
+                                       creature->GetPositionZ(), creature->GetOrientation() };
+                    ppc.DeathTime  = GameTime::GetGameTime().count();
+                    ppc.OrigEntry  = creature->GetEntry();
+                    ppc.Resolved   = false;
+                    session.PendingPhaseChecks.push_back(ppc);
+
+                    LOG_INFO("module", "DungeonMaster: Boss '{}' died — deferring kill count for phase check (entry {})",
+                        creature->GetName(), creature->GetEntry());
                 }
                 else
                 {
                     ++session.MobsKilled;
                 }
 
-                // Credit all party members
+                // Credit all party members (boss credits are deferred for phase check)
                 for (auto& pd : session.Players)
                 {
-                    if (sc.IsBoss) ++pd.BossesKilled;
-                    else           ++pd.MobsKilled;
-                }
-
-                // Check completion
-                if (session.IsActive() && session.TotalBosses > 0
-                    && session.BossesKilled >= session.TotalBosses)
-                {
-                    session.State   = SessionState::Completed;
-                    session.EndTime = GameTime::GetGameTime().count();
-
-                    uint32 delay = (session.RoguelikeRunId != 0)
-                        ? sDMConfig->GetRoguelikeTransitionDelay()
-                        : sDMConfig->GetCompletionTeleportDelay();
-
-                    for (const auto& pd2 : session.Players)
-                        if (Player* p = ObjectAccessor::FindPlayer(pd2.PlayerGuid))
-                            if (p->GetSession())
-                            {
-                                char buf[256];
-                                snprintf(buf, sizeof(buf),
-                                    "|cFF00FF00[Dungeon Master]|r %s "
-                                    "Rewards in |cFFFFFFFF%u|r seconds...",
-                                    session.RoguelikeRunId != 0
-                                        ? "Floor cleared!" : "Dungeon complete!",
-                                    delay);
-                                ChatHandler(p->GetSession()).SendSysMessage(buf);
-                            }
+                    if (!sc.IsBoss) ++pd.MobsKilled;
+                    // Boss kill credits are applied when the phase check resolves
                 }
 
                 LOG_DEBUG("module", "DungeonMaster: Creature {} (entry {}) death handled via hook "
@@ -2112,6 +2195,46 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
 
     // Ensure lootable flag is set (critical for boss loot)
     creature->SetDynamicFlag(UNIT_DYNFLAG_LOOTABLE);
+
+    // --- Group Loot Support (Need/Greed) ---
+    // If the killing player is in a group with Group Loot or Need Before Greed,
+    // trigger the group's loot distribution system for qualifying items.
+    loot.loot_type = LOOT_CORPSE;
+    Player* looter = nullptr;
+    Group*  group  = nullptr;
+    for (const auto& pd : session->Players)
+    {
+        Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
+        if (p && p->IsInWorld() && p->GetGroup())
+        {
+            looter = p;
+            group  = p->GetGroup();
+            break;
+        }
+    }
+
+    if (group && looter)
+    {
+        // Set the loot owner so the group system can process it
+        creature->SetLootRecipient(looter);
+
+        // Mark items above the group's loot threshold for rolling;
+        // items below threshold become free-for-all (direct loot)
+        uint8 threshold = group->GetLootThreshold();
+        for (auto& item : loot.items)
+        {
+            const ItemTemplate* proto = sObjectMgr->GetItemTemplate(item.itemid);
+            if (!proto || proto->Quality < threshold)
+                item.is_underthreshold = true;
+        }
+
+        // Trigger group loot distribution — sends Need/Greed/Pass rolls
+        // to all eligible group members for qualifying items
+        group->GroupLoot(&loot, creature);
+
+        LOG_INFO("module", "DungeonMaster: Group loot triggered for {} — {} items eligible for rolls",
+            creature->GetName(), loot.items.size());
+    }
     
     LOG_INFO("module", "DungeonMaster: FillCreatureLoot complete for {} (GUID: {}, Boss: {}, Level: {}, Gold: {}, Items: {})",
         creature->GetName(), creature->GetGUID().GetCounter(), isBoss, level, loot.gold, itemsAdded);
@@ -2658,38 +2781,149 @@ void DungeonMasterMgr::Update(uint32 diff)
                             sc.IsDead = true;
                             if (c) FillCreatureLoot(c, &session, sc.IsBoss);
                             GiveKillXP(&session, sc.IsBoss, sc.IsElite);
-                            if (sc.IsBoss) { ++session.BossesKilled; HandleBossDeath(&session); }
-                            else           { ++session.MobsKilled; }
 
-                            // Credit all party members
-                            for (auto& pd : session.Players)
+                            if (sc.IsBoss)
                             {
-                                if (sc.IsBoss) ++pd.BossesKilled;
-                                else           ++pd.MobsKilled;
+                                // Multi-phase: defer boss kill for phase check
+                                PendingPhaseCheck ppc;
+                                if (c)
+                                    ppc.DeathPos = { c->GetPositionX(), c->GetPositionY(),
+                                                     c->GetPositionZ(), c->GetOrientation() };
+                                ppc.DeathTime = GameTime::GetGameTime().count();
+                                ppc.OrigEntry = sc.Entry;
+                                ppc.Resolved  = false;
+                                session.PendingPhaseChecks.push_back(ppc);
                             }
+                            else
+                            {
+                                ++session.MobsKilled;
+                                for (auto& pd : session.Players)
+                                    ++pd.MobsKilled;
+                            }
+                        }
+                    }
 
+                    // ---- Multi-phase boss resolution ----
+                    // After 5 seconds, check if new creatures spawned near the boss death location.
+                    // If found, promote them to boss status. If not, confirm the boss kill.
+                    uint64 nowTime = GameTime::GetGameTime().count();
+                    for (auto& ppc : session.PendingPhaseChecks)
+                    {
+                        if (ppc.Resolved) continue;
+                        if (nowTime - ppc.DeathTime < 5) continue;  // Wait 5 seconds for phase transitions
+
+                        ppc.Resolved = true;
+
+                        // Scan for new non-tracked creatures near the boss death position
+                        bool phaseCreatureFound = false;
+                        Map* scanMap = ref->GetMap();
+                        if (scanMap && scanMap->IsDungeon() && ppc.DeathPos.GetPositionX() != 0.0f)
+                        {
+                            std::list<Creature*> nearby;
+                            ref->GetCreatureListWithEntryInGrid(nearby, 0, 5000.0f);
+
+                            for (Creature* nc : nearby)
+                            {
+                                if (!nc || !nc->IsAlive() || nc->IsPet() || nc->IsGuardian())
+                                    continue;
+                                if (nc->GetEntry() == sDMConfig->GetNpcEntry())
+                                    continue;
+                                if (ourGuids.count(nc->GetGUID()) > 0)
+                                    continue;  // Already tracked
+
+                                // Check distance from boss death position (within 40 yards)
+                                float dx = nc->GetPositionX() - ppc.DeathPos.GetPositionX();
+                                float dy = nc->GetPositionY() - ppc.DeathPos.GetPositionY();
+                                float dz = nc->GetPositionZ() - ppc.DeathPos.GetPositionZ();
+                                float dist = std::sqrt(dx*dx + dy*dy + dz*dz);
+
+                                if (dist > 40.0f) continue;
+
+                                // Check if it's an elite/boss creature (likely phase 2)
+                                const CreatureTemplate* tmpl = nc->GetCreatureTemplate();
+                                if (!tmpl || (tmpl->rank != 1 && tmpl->rank != 2 && tmpl->rank != 4))
+                                    continue;
+
+                                // Promote to boss creature
+                                LOG_INFO("module", "DungeonMaster: Phase creature detected! '{}' (entry {}) "
+                                    "spawned {:.1f} yds from boss death location — promoting to boss",
+                                    nc->GetName(), nc->GetEntry(), dist);
+
+                                nc->SetFaction(14);
+                                nc->SetReactState(REACT_AGGRESSIVE);
+                                nc->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC
+                                                                | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_PACIFIED);
+                                nc->SetImmuneToPC(false);
+                                nc->SetImmuneToNPC(false);
+
+                                SpawnedCreature nsc;
+                                nsc.Guid = nc->GetGUID();
+                                nsc.Entry = nc->GetEntry();
+                                nsc.IsElite = true;
+                                nsc.IsBoss = true;
+                                session.SpawnedCreatures.push_back(nsc);
+                                ourGuids.insert(nc->GetGUID());
+
+                                // Track the GUID for cleanup
+                                auto& gl = _instanceCreatureGuids[session.InstanceId];
+                                gl.push_back(nc->GetGUID());
+
+                                phaseCreatureFound = true;
+
+                                for (const auto& pd3 : session.Players)
+                                    if (Player* p3 = ObjectAccessor::FindPlayer(pd3.PlayerGuid))
+                                        if (p3->GetSession())
+                                            ChatHandler(p3->GetSession()).SendSysMessage(
+                                                "|cFFFF8000[Dungeon Master]|r The boss enters a new phase!");
+                                break;  // Only promote one phase creature per check
+                            }
+                        }
+
+                        if (!phaseCreatureFound)
+                        {
+                            // No phase creature found — confirm the boss kill
+                            ++session.BossesKilled;
+                            for (auto& pd : session.Players)
+                                ++pd.BossesKilled;
+
+                            LOG_INFO("module", "DungeonMaster: Boss kill confirmed (entry {}) — progress: {}/{}",
+                                ppc.OrigEntry, session.BossesKilled, session.TotalBosses);
+                            HandleBossDeath(&session);
+
+                            // Check completion
                             if (session.IsActive() && session.TotalBosses > 0
                                 && session.BossesKilled >= session.TotalBosses)
                             {
                                 session.State   = SessionState::Completed;
                                 session.EndTime = GameTime::GetGameTime().count();
+
+                                uint32 delay = (session.RoguelikeRunId != 0)
+                                    ? sDMConfig->GetRoguelikeTransitionDelay()
+                                    : sDMConfig->GetCompletionTeleportDelay();
+
                                 for (const auto& pd2 : session.Players)
                                     if (Player* p = ObjectAccessor::FindPlayer(pd2.PlayerGuid))
-                                    {
                                         if (p->GetSession())
                                         {
                                             char buf[256];
                                             snprintf(buf, sizeof(buf),
-                                                "|cFF00FF00[Dungeon Master]|r Dungeon complete! "
+                                                "|cFF00FF00[Dungeon Master]|r %s "
                                                 "Rewards in |cFFFFFFFF%u|r seconds...",
-                                                sDMConfig->GetCompletionTeleportDelay());
+                                                session.RoguelikeRunId != 0
+                                                    ? "Floor cleared!" : "Dungeon complete!",
+                                                delay);
                                             ChatHandler(p->GetSession()).SendSysMessage(buf);
                                         }
-                                    }
                                 break;
                             }
                         }
                     }
+
+                    // Clean up resolved phase checks
+                    session.PendingPhaseChecks.erase(
+                        std::remove_if(session.PendingPhaseChecks.begin(), session.PendingPhaseChecks.end(),
+                            [](const PendingPhaseCheck& p) { return p.Resolved; }),
+                        session.PendingPhaseChecks.end());
 
                     // ---- Sweep for stray creatures (script-spawned, respawned) ----
                     Map* m = ref->GetMap();

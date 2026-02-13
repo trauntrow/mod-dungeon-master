@@ -16,8 +16,9 @@ Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dun
 - **6 difficulty tiers** — Novice through Grandmaster with tuned HP/damage/reward multipliers
 - **Level scaling** — Scale creatures to your party's level or use the tier's natural range
 - **Any dungeon, any level** — A level 80 can run Deadmines scaled to 80, or at its original difficulty
-- **Real dungeon bosses** — Final bosses are pulled from actual dungeon boss pools (with their original AI scripts), matched to the session's theme
+- **Real dungeon bosses** — Final bosses are pulled from a global pool of all dungeon bosses across Classic, TBC, and WotLK instances, matched to the session's theme. Bosses keep their original model and name but fight with properly level-scaled melee damage (native spell scripts are replaced to prevent unscaled one-shots). Multi-phase bosses are fully supported — if a boss transitions to a new phase (spawning a new creature), the system detects and promotes it automatically
 - **Party support** — Solo or groups up to 5, fully Playerbot-compatible
+- **Group Loot support** — Items dropped by enemies support the Group Loot game mechanic where party members roll Need or Greed on qualifying items
 - **Per-player difficulty** — HP and damage scale with party size; solo players get a reduction
 - **Auto-resurrect** — Dead players revive at the entrance when combat ends
 - **Environmental damage scaling** — Native dungeon hazards are scaled down for level-mismatched parties, hard-capped at 3% max HP per tick
@@ -141,8 +142,8 @@ All settings live in `mod_dungeon_master.conf`. Key options:
 | `Scaling.LevelBand` | 3 | Creature level window: ±N levels from party |
 | `Scaling.SoloMultiplier` | 0.5 | HP/damage reduction for solo players |
 | `Scaling.PerPlayerHealth` | 0.25 | HP added per extra party member (25%) |
-| `Scaling.BossHealthMult` | 15.0 | Boss HP multiplier |
-| `Scaling.BossDamageMult` | 2.5 | Boss damage multiplier |
+| `Scaling.BossHealthMult` | 8.0 | Boss HP multiplier (on top of party scaling) |
+| `Scaling.BossDamageMult` | 1.5 | Boss damage multiplier (party scaling only, not stacked with tier) |
 | `Scaling.EliteHealthMult` | 2.0 | Elite trash HP multiplier |
 
 ### Dungeon
@@ -218,7 +219,10 @@ Affixes stack — at tier 10+ you might face Fortified + Tyrannical + Raging sim
 - **Async teleport handling** — 30-second grace period after teleports to prevent false "abandoned" detection.
 - **InstanceScript neutralization** — All boss encounters are marked DONE on populate to prevent native scripts from interfering.
 - **Debuff purging** — Lingering debuffs from despawned creatures are removed before each floor.
-- **Custom creature AI** — Spawned creatures use a lightweight `DungeonMasterCreatureAI` that hooks `JustDied` for proper loot timing.
+- **Custom creature AI** — All spawned creatures (trash and bosses) use `DungeonMasterCreatureAI` which patrols a 5 yd radius around spawn points, actively scans for players within aggro range (with a 1-second fallback timer for grid edge cases), and hooks `JustDied` for proper loot timing. Boss native spell scripts are replaced because they contain hard-coded damage values designed for their original level range; bosses fight with properly scaled melee instead.
+- **Multi-phase boss detection** — When a boss dies, the system waits 5 seconds and scans for new elite/boss creatures near the death location. If a phase-2 creature is detected, it is automatically promoted to boss status and the original death does not count as a kill.
+- **Group Loot support** — Creature loot triggers the group's Need/Greed roll system for items above the group's loot quality threshold.
+- **Boss damage scaling** — Boss damage uses only party-size scaling (not stacked with the difficulty tier's DamageMultiplier) to prevent excessive damage when combined with level scaling.
 - **Standard AzerothCore** — Should work on vanilla AzerothCore with minor query adjustments (`id1` → `entry` in creature table joins). Not tested.
 
 ---

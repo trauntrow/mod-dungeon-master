@@ -62,8 +62,8 @@ void DMConfig::LoadConfig(bool reload)
     _soloMultiplier  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.SoloMultiplier",    0.50f);
     _eliteHealthMult = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.EliteHealthMult",   2.0f);
     _eliteDamageMult = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.EliteDamageMult",   1.5f);
-    _bossHealthMult  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.BossHealthMult",   15.0f);
-    _bossDamageMult  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.BossDamageMult",    2.5f);
+    _bossHealthMult  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.BossHealthMult",    8.0f);
+    _bossDamageMult  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.BossDamageMult",    1.5f);
 
     // Rewards
     _baseGold     = sConfigMgr->GetOption<uint32>("DungeonMaster.Rewards.BaseGold",    50000);

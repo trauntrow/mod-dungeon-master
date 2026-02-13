@@ -124,8 +124,8 @@ private:
     float _soloMultiplier  = 0.50f;
     float _eliteHealthMult = 2.0f;
     float _eliteDamageMult = 1.5f;
-    float _bossHealthMult  = 5.0f;
-    float _bossDamageMult  = 2.0f;
+    float _bossHealthMult  = 8.0f;
+    float _bossDamageMult  = 1.5f;
 
     // Rewards
     uint32 _baseGold    = 50000;
