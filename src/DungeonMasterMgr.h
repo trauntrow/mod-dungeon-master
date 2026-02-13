@@ -81,7 +81,9 @@ public:
 
     // Env damage scaling
     bool  IsSessionCreature(ObjectGuid playerGuid, ObjectGuid creatureGuid);
+    bool  IsSessionBoss(ObjectGuid playerGuid, ObjectGuid creatureGuid);
     float GetEnvironmentalDamageScale(ObjectGuid playerGuid);
+    float GetSessionCreatureDamageScale(ObjectGuid playerGuid, ObjectGuid creatureGuid);
 
     Position    GetDungeonEntrance(uint32 mapId);
     std::string GetSessionStatusString(const Session* session) const;

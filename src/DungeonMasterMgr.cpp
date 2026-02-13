@@ -1183,7 +1183,7 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         // --- Movement ---
         if (isBoss)
         {
-            // Bosses idle at spawn — they'll engage when players approach
+            // Bosses stay at spawn — native AI handles movement and abilities
             c->SetWanderDistance(0.0f);
             c->SetDefaultMovementType(IDLE_MOTION_TYPE);
             c->GetMotionMaster()->MoveIdle();
@@ -1196,25 +1196,13 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
             c->GetMotionMaster()->MoveRandom(5.0f);
         }
 
-        // --- Strip native abilities from bosses ---
-        // Boss templates come from all dungeon tiers.  Their scripted spells have
-        // hard-coded damage values designed for their original level range, which
-        // are NOT affected by our stat scaling.  A level-80 boss spell would
-        // one-shot a level-25 party.  We replace the boss AI with our custom
-        // melee-only AI below, and strip any pre-applied auras here so passive
-        // procs and combat triggers don't fire unscaled damage.  Bosses still
-        // keep their model, name, and gold-dragon boss frame.
-        if (isBoss)
-        {
-            c->RemoveAllAuras();
-            // Restore health after aura strip (some auras modify max HP)
-            c->SetHealth(c->GetMaxHealth());
-        }
-
-        // --- Install custom AI for all spawned creatures ---
-        // Both trash and bosses use DungeonMasterCreatureAI for reliable
-        // aggro detection, properly-scaled melee damage, and JustDied hook.
-        c->SetAI(new DungeonMasterCreatureAI(c));
+        // --- Install custom AI for trash only ---
+        // Bosses keep their native ScriptName AI so they retain all original
+        // spell abilities and combat mechanics.  Spell/ability damage from bosses
+        // is scaled down in dm_unit_script based on the session's effective level.
+        // Loot/kill credit for bosses is handled by OnUnitDeath in dm_unit_script.
+        if (!isBoss)
+            c->SetAI(new DungeonMasterCreatureAI(c));
 
         // Force visibility refresh or client won't see the creature
         c->UpdateObjectVisibility(true);
@@ -2650,6 +2638,119 @@ bool DungeonMasterMgr::IsSessionCreature(ObjectGuid playerGuid, ObjectGuid creat
         return false;
 
     return sit->second.IsSessionCreature(creatureGuid);
+}
+
+// Check if creature is a session boss
+bool DungeonMasterMgr::IsSessionBoss(ObjectGuid playerGuid, ObjectGuid creatureGuid)
+{
+    std::lock_guard<std::mutex> lock(_sessionMutex);
+    auto pit = _playerToSession.find(playerGuid);
+    if (pit == _playerToSession.end())
+        return false;
+
+    auto sit = _activeSessions.find(pit->second);
+    if (sit == _activeSessions.end())
+        return false;
+
+    for (const auto& sc : sit->second.SpawnedCreatures)
+        if (sc.Guid == creatureGuid)
+            return sc.IsBoss;
+
+    return false;
+}
+
+// Compute damage scale for a session creature attacking a session player.
+// Spell/ability damage is hard-coded in DBC at the boss's original design level.
+// This returns a multiplier to bring that damage in line with the session's level.
+float DungeonMasterMgr::GetSessionCreatureDamageScale(
+    ObjectGuid playerGuid, ObjectGuid creatureGuid)
+{
+    std::lock_guard<std::mutex> lock(_sessionMutex);
+    auto pit = _playerToSession.find(playerGuid);
+    if (pit == _playerToSession.end())
+        return 1.0f;
+
+    auto sit = _activeSessions.find(pit->second);
+    if (sit == _activeSessions.end())
+        return 1.0f;
+
+    const Session& session = sit->second;
+
+    // Verify this creature belongs to the session
+    bool isBoss = false;
+    bool found  = false;
+    for (const auto& sc : session.SpawnedCreatures)
+    {
+        if (sc.Guid == creatureGuid)
+        {
+            found  = true;
+            isBoss = sc.IsBoss;
+            break;
+        }
+    }
+    if (!found)
+        return 1.0f;
+
+    // Trash mobs use our custom AI — melee is already scaled, no spells.
+    if (!isBoss)
+        return 1.0f;
+
+    // For bosses: compare session target level to the boss's original template level.
+    // Use creature_classlevelstats base damage ratio for accurate scaling.
+    uint8 targetLevel = session.EffectiveLevel;
+
+    // We need the creature's original template maxlevel.  Find a player reference
+    // to resolve the creature GUID.
+    Creature* creature = nullptr;
+    for (const auto& pd : session.Players)
+    {
+        Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
+        if (p && p->IsInWorld())
+        {
+            creature = ObjectAccessor::GetCreature(*p, creatureGuid);
+            if (creature) break;
+        }
+    }
+
+    if (!creature)
+        return 1.0f;
+
+    uint8 templateLevel = creature->GetCreatureTemplate()->maxlevel;
+
+    // If session level >= template level, boss is upscaled — no reduction needed.
+    if (targetLevel >= templateLevel)
+        return 1.0f;
+
+    // Use classlevelstats to get the proper damage ratio between levels.
+    uint8 unitClass = creature->GetCreatureTemplate()->unit_class;
+    const ClassLevelStatEntry* targetStats   = GetBaseStatsForLevel(unitClass, targetLevel);
+    const ClassLevelStatEntry* templateStats = GetBaseStatsForLevel(unitClass, templateLevel);
+
+    float scale;
+    if (targetStats && templateStats && templateStats->BaseDamage > 1.0f)
+    {
+        scale = targetStats->BaseDamage / templateStats->BaseDamage;
+    }
+    else
+    {
+        // Fallback: level ratio squared (spell damage scales ~quadratically)
+        float lvlRatio = static_cast<float>(targetLevel) / static_cast<float>(templateLevel);
+        scale = lvlRatio * lvlRatio;
+    }
+
+    // Apply solo/party multiplier so boss spells feel consistent with melee
+    uint32 n = session.Players.size();
+    if (n <= 1)
+        scale *= sDMConfig->GetSoloMultiplier();
+
+    // Clamp: never fully negate, never amplify
+    scale = std::max(0.03f, std::min(1.0f, scale));
+
+    LOG_DEBUG("module", "DungeonMaster: Boss spell damage scale for session {} — "
+        "targetLvl={}, templateLvl={}, scale={:.3f}",
+        session.SessionId, targetLevel, templateLevel, scale);
+
+    return scale;
 }
 
 // Scale environmental damage to party level

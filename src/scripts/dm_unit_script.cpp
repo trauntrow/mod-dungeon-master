@@ -1,6 +1,9 @@
 /*
  * mod-dungeon-master — dm_unit_script.cpp
- * Scales environmental/hazard damage for level-scaled sessions.
+ * Scales ALL incoming damage for session players:
+ *   - Session boss spells/melee: scaled by level ratio (template level → session level)
+ *   - Session trash: already scaled by custom AI melee, passed through
+ *   - Environmental (non-session): capped at 3% max HP
  */
 
 #include "ScriptMgr.h"
@@ -12,7 +15,6 @@
 
 using namespace DungeonMaster;
 
-// Maximum percentage of player max HP that a single non-session damage
 static constexpr float ENV_DAMAGE_MAX_PCT = 0.03f;
 
 class dm_unit_script : public UnitScript
@@ -20,30 +22,24 @@ class dm_unit_script : public UnitScript
 public:
     dm_unit_script() : UnitScript("dm_unit_script") {}
 
-    // -- Periodic aura ticks (Toxic Spores, poison clouds, fire patches) --
     void ModifyPeriodicDamageAurasTick(Unit* target, Unit* attacker, uint32& damage, SpellInfo const* /*spellInfo*/) override
     {
-        ScaleEnvDamage(target, attacker, damage);
+        ScaleDamage(target, attacker, damage);
     }
 
-    // -- Direct spell damage (bolts from stalkers, trap triggers) --
     void ModifySpellDamageTaken(Unit* target, Unit* attacker, int32& damage, SpellInfo const* /*spellInfo*/) override
     {
         if (damage <= 0) return;
         uint32 udmg = static_cast<uint32>(damage);
-        ScaleEnvDamage(target, attacker, udmg);
+        ScaleDamage(target, attacker, udmg);
         damage = static_cast<int32>(udmg);
     }
 
-    // -- Melee damage (covers edge cases from env hazards) --
     void ModifyMeleeDamage(Unit* target, Unit* attacker, uint32& damage) override
     {
-        ScaleEnvDamage(target, attacker, damage);
+        ScaleDamage(target, attacker, damage);
     }
 
-    // Reliable creature death hook — fires for ALL unit deaths regardless of AI.
-    // Bosses keep their native ScriptName AI for proper mechanics, so our
-    // DungeonMasterCreatureAI::JustDied may never fire. This catches every kill.
     void OnUnitDeath(Unit* unit, Unit* killer) override
     {
         if (!sDMConfig->IsEnabled() || !unit)
@@ -53,7 +49,6 @@ public:
         if (!creature)
             return;
 
-        // Find session via killer (player or player's pet)
         Player* player = nullptr;
         if (killer)
         {
@@ -76,7 +71,7 @@ public:
     }
 
 private:
-    void ScaleEnvDamage(Unit* target, Unit* attacker, uint32& damage)
+    void ScaleDamage(Unit* target, Unit* attacker, uint32& damage)
     {
         if (!sDMConfig->IsEnabled() || damage == 0)
             return;
@@ -85,42 +80,44 @@ private:
         if (!player)
             return;
 
-        // Skip if attacker is another player (PvP)
         if (attacker && attacker->ToPlayer())
             return;
 
-
         ObjectGuid playerGuid = player->GetGUID();
 
-        // Our spawned creatures are already scaled — skip
+        if (!sDungeonMasterMgr->GetSessionByPlayer(playerGuid))
+            return;
 
         if (attacker)
         {
             ObjectGuid attackerGuid = attacker->GetGUID();
+
+            // Session creature damage — scale bosses, pass through trash
             if (sDungeonMasterMgr->IsSessionCreature(playerGuid, attackerGuid))
+            {
+                float scale = sDungeonMasterMgr->GetSessionCreatureDamageScale(
+                    playerGuid, attackerGuid);
+
+                if (scale < 1.0f)
+                    damage = std::max(1u, static_cast<uint32>(damage * scale));
+
                 return;
+            }
         }
 
+        // Non-session attacker (environmental hazards, traps, etc.)
+        float envScale = sDungeonMasterMgr->GetEnvironmentalDamageScale(playerGuid);
+        if (envScale < 1.0f)
+            damage = static_cast<uint32>(damage * envScale);
 
-        if (!sDungeonMasterMgr->GetSessionByPlayer(playerGuid))
-            return;  // not in a session — don't modify
-
-        // Level scaling
-
-        float scale = sDungeonMasterMgr->GetEnvironmentalDamageScale(playerGuid);
-        if (scale < 1.0f)
-            damage = static_cast<uint32>(damage * scale);
-
-        // Hard cap at 3% max HP
         uint32 maxHp = player->GetMaxHealth();
-        uint32 cap   = static_cast<uint32>(maxHp * ENV_DAMAGE_MAX_PCT);
-        if (cap < 1) cap = 1;
+        uint32 cap   = std::max(1u, static_cast<uint32>(maxHp * ENV_DAMAGE_MAX_PCT));
 
         if (damage > cap)
             damage = cap;
 
         if (damage == 0)
-            damage = 1;   // Minimum 1 damage — never fully negate
+            damage = 1;
     }
 };
 
