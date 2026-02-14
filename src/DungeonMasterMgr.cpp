@@ -1323,6 +1323,44 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 
     LOG_INFO("module", "DungeonMaster: Session {} — {} mobs, {} bosses spawned.",
         session->SessionId, session->TotalMobs, session->TotalBosses);
+
+    // --- Spawn roguelike vendor NPC at entrance ---
+    if (session->RoguelikeRunId != 0 && sDMConfig->IsRoguelikeVendorEnabled())
+    {
+        static constexpr uint32 DM_VENDOR_NPC_ENTRY = 500001;
+
+        // Small offset from entrance so vendor doesn't overlap player spawn point
+        float vendorX = session->EntrancePos.GetPositionX() + 3.0f;
+        float vendorY = session->EntrancePos.GetPositionY() + 2.0f;
+        float vendorZ = session->EntrancePos.GetPositionZ();
+        float vendorO = session->EntrancePos.GetOrientation();
+
+        Creature* vendor = map->SummonCreature(DM_VENDOR_NPC_ENTRY,
+            { vendorX, vendorY, vendorZ, vendorO });
+        if (vendor)
+        {
+            vendor->SetFaction(35);           // friendly to all
+            vendor->SetFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE);
+            vendor->SetImmuneToPC(true);
+            vendor->SetImmuneToNPC(true);
+            vendor->SetWanderDistance(0.0f);
+            vendor->SetDefaultMovementType(IDLE_MOTION_TYPE);
+            vendor->GetMotionMaster()->MoveIdle();
+            vendor->setActive(true);
+            vendor->UpdateObjectVisibility(true);
+
+            // Track for cleanup — ClearDungeonCreatures() will despawn it
+            guidList.push_back(vendor->GetGUID());
+
+            LOG_INFO("module", "DungeonMaster: Spawned roguelike vendor at ({:.1f}, {:.1f}, {:.1f}) for session {}",
+                vendorX, vendorY, vendorZ, session->SessionId);
+        }
+        else
+        {
+            LOG_WARN("module", "DungeonMaster: Failed to spawn roguelike vendor for session {}",
+                session->SessionId);
+        }
+    }
 }
 
 // Select a creature matching the theme

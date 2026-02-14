@@ -292,6 +292,14 @@ DungeonMaster.Roguelike.SecondAffixTier = 7
 #        Default: 10
 DungeonMaster.Roguelike.ThirdAffixTier = 10
 
+# --- VENDOR NPC ---
+# Spawn a friendly vendor at the dungeon entrance during roguelike runs.
+# Provides repair, reagents, food, water, and ammo.
+ 
+#    DungeonMaster.Roguelike.VendorEnable
+#        Default: 1
+DungeonMaster.Roguelike.VendorEnable = 1
+
 # --- BUFF POOL ---
 # Each dungeon clear gives the party a random buff from this pool.
 # Format: "SpellId,DisplayName,Weight"

@@ -97,6 +97,7 @@ public:
     uint32 GetRoguelikeThirdAffixTier()     const { return _roguelikeThirdAffixTier; }
     uint32 GetRoguelikeMaxBuffs()           const { return _roguelikeMaxBuffs; }
     const std::vector<RoguelikeBuff>& GetRoguelikeBuffPool() const { return _roguelikeBuffPool; }
+    bool   IsRoguelikeVendorEnabled()       const { return _roguelikeVendorEnabled; }
 
 private:
     void LoadDifficulties();
@@ -156,6 +157,7 @@ private:
     bool   _announceCompletion      = true;
 
     // Roguelike
+    bool   _roguelikeVendorEnabled = true;
     bool   _roguelikeEnabled          = true;
     uint32 _roguelikeTransitionDelay  = 30;
     float  _roguelikeHpScaling        = 0.10f;
