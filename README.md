@@ -16,7 +16,7 @@ Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dun
 - **6 difficulty tiers** — Novice through Grandmaster with tuned HP/damage/reward multipliers
 - **Level scaling** — Scale creatures to your party's level or use the tier's natural range
 - **Any dungeon, any level** — A level 80 can run Deadmines scaled to 80, or at its original difficulty
-- **Real dungeon bosses** — Final bosses are pulled from a global pool of all dungeon bosses across Classic, TBC, and WotLK instances, matched to the session's theme. Bosses retain all of their original spell abilities and combat mechanics; incoming damage from boss spells is automatically scaled to match the session's effective level so abilities designed for level-70 encounters won't one-shot a level-25 party. Multi-phase bosses are fully supported — if a boss transitions to a new phase (spawning a new creature), the system detects and promotes it automatically
+- **Real dungeon bosses** — Final bosses are pulled from a global pool of all dungeon bosses across Classic, TBC, and WotLK instances, matched to the session's theme.
 - **Party support** — Solo or groups up to 5, fully Playerbot-compatible
 - **Group Loot support** — Items dropped by enemies support the Group Loot game mechanic where party members roll Need or Greed on qualifying items
 - **Per-player difficulty** — HP and damage scale with party size; solo players get a reduction
@@ -35,7 +35,6 @@ Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dun
 - **Random dungeon rotation** — Each floor picks a new dungeon appropriate for your level band
 - **Tier-scaled rewards** — Better loot at higher tiers, with increasing epic drop chance
 - **Roguelike leaderboard** — Separate leaderboard tracking highest tier reached
-- **NPC-based flow** — Between floors, players return to the world to interact with the NPC for the next dungeon (stable, no instance-to-instance teleport issues)
 
 ---
 
