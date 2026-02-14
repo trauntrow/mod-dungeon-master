@@ -31,6 +31,19 @@ public:
             return;
         }
 
+        // Patch Greater Blessing of Kings (25898) to allow stacking.
+        // The base DBC has StackAmount=0 which prevents the client from
+        // showing a stack count on the buff icon.  Setting it server-side
+        // to 20 lets SetStackAmount() work and the client renders "2", "3"
+        // etc. on the icon during roguelike runs.
+        SpellInfo* bokInfo = const_cast<SpellInfo*>(
+            sSpellMgr->GetSpellInfo(25898));
+        if (bokInfo)
+        {
+            bokInfo->StackAmount = 255;
+            LOG_INFO("module", "DungeonMaster: Patched BoK (25898) StackAmount → 255 for roguelike buff stacking.");
+        }
+
         sDungeonMasterMgr->Initialize();
         sRoguelikeMgr->Initialize();
 
