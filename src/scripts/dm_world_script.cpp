@@ -7,6 +7,8 @@
 #include "DungeonMasterMgr.h"
 #include "RoguelikeMgr.h"
 #include "DMConfig.h"
+#include "SpellMgr.h"
+#include "SpellInfo.h"
 #include "Log.h"
 
 using namespace DungeonMaster;
