@@ -1,8 +1,6 @@
 # mod-dungeon-master
 
-## For the Playerbots Fork
-
-A procedural dungeon challenge system for **AzerothCore** (WotLK 3.3.5a). Built and tested on the [playerbots fork](https://github.com/liyunfan1223/azerothcore-wotlk).
+A procedural dungeon challenge system for **AzerothCore** (WotLK 3.3.5a).
 
 Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dungeon — then get teleported into a cleared instance repopulated with level-scaled themed enemies and a boss. Kill everything to earn rewards. Roguelike mode chains dungeons together with escalating difficulty, affixes, and stacking stat buffs until the party wipes.
 
@@ -19,7 +17,7 @@ Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dun
 - **Level scaling** — Scale creatures to your party's level or use the tier's natural range
 - **Any dungeon, any level** — A level 80 can run Deadmines scaled to 80, or at its original difficulty
 - **Real dungeon bosses** — Final bosses are pulled from a global pool of all dungeon bosses across Classic, TBC, and WotLK instances, matched to the session's theme.
-- **Party support** — Solo or groups up to 5, fully Playerbot-compatible
+- **Party support** — Solo or groups up to 5
 - **Group Loot support** — Items dropped by enemies support the Group Loot game mechanic where party members roll Need or Greed on qualifying items
 - **Per-player difficulty** — HP and damage scale with party size; solo players get a reduction
 - **Auto-resurrect** — Dead players revive at the entrance when combat ends
@@ -216,7 +214,7 @@ Affixes stack — at tier 10+ you might face Fortified + Tyrannical + Raging sim
 
 ## Technical Notes
 
-- **AzerothCore playerbots fork** — Built against the [liyunfan1223 fork](https://github.com/liyunfan1223/azerothcore-wotlk). Uses `id1` column names in creature queries for compatibility.
+- **AzerothCore compatibility** — Built against the official [AzerothCore](https://github.com/azerothcore/azerothcore-wotlk) repository. No core modifications required.
 - **Thread safety** — Session maps and cooldowns are mutex-guarded for multi-player safety.
 - **Async teleport handling** — 30-second grace period after teleports to prevent false "abandoned" detection.
 - **InstanceScript neutralization** — All boss encounters are marked DONE on populate to prevent native scripts from interfering.
@@ -226,7 +224,7 @@ Affixes stack — at tier 10+ you might face Fortified + Tyrannical + Raging sim
 - **Multi-phase boss detection** — When a boss dies, the system waits 5 seconds and scans for new elite/boss creatures near the death location. If a phase-2 creature is detected, it is automatically promoted to boss status and the original death does not count as a kill.
 - **Group Loot support** — Creature loot triggers the group's Need/Greed roll system for items above the group's loot quality threshold.
 - **Boss damage scaling** — Boss damage uses only party-size scaling (not stacked with the difficulty tier's DamageMultiplier) to prevent excessive damage when combined with level scaling.
-- **Standard AzerothCore** — Should work on vanilla AzerothCore with minor query adjustments (`id1` → `entry` in creature table joins). Not tested.
+- **Standard AzerothCore** — All queries use standard AzerothCore column names. No fork-specific dependencies.
 
 ---
 
@@ -261,8 +259,6 @@ mod-dungeon-master/
 ## Credits
 
 - **[AzerothCore](https://github.com/azerothcore/azerothcore-wotlk)** — Open-source WoW 3.3.5a server emulator
-- **[AzerothCore-playerbots](https://github.com/liyunfan1223/azerothcore-wotlk)** — Playerbots fork used as the primary dev target
-- **[mod-playerbots](https://github.com/liyunfan1223/mod-playerbots)** by liyunfan1223 — AI player bots for solo and small-group play
 
 ## Tips
 
