@@ -1212,7 +1212,15 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         // is scaled down in dm_unit_script based on the session's effective level.
         // Loot/kill credit for bosses is handled by OnUnitDeath in dm_unit_script.
         if (!isBoss)
+        {
             c->SetAI(new DungeonMasterCreatureAI(c));
+        }
+        else
+        {
+            // For bosses, force reload of their native AI from database/scripts
+            // to ensure spells and abilities work properly
+            c->AIM_Initialize();
+        }
 
         // Force visibility refresh or client won't see the creature
         c->UpdateObjectVisibility(true);
@@ -2458,14 +2466,6 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
         // to all eligible group members for qualifying items
         group->GroupLoot(&loot, creature);
 
-        // Force dynamic flag update to all session players so they see the lootable corpse
-        for (const auto& pd : session->Players)
-        {
-            Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
-            if (p && p->IsInWorld() && p->GetMapId() == session->MapId)
-                creature->SendUpdateToPlayer(p);
-        }
-
         LOG_INFO("module", "DungeonMaster: Group loot triggered for {} — {} items, "
             "lootMethod={}, threshold={}, groupSize={}",
             creature->GetName(), loot.items.size(),
@@ -2474,6 +2474,15 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
     else if (looter)
     {
         creature->SetLootRecipient(looter);
+    }
+    
+    // Force dynamic flag update to all session players so they see the lootable corpse
+    // This is critical for bosses (which don't have custom AI) and solo players
+    for (const auto& pd : session->Players)
+    {
+        Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
+        if (p && p->IsInWorld() && p->GetMapId() == session->MapId)
+            creature->SendUpdateToPlayer(p);
     }
     
     LOG_INFO("module", "DungeonMaster: FillCreatureLoot complete for {} (GUID: {}, Boss: {}, Level: {}, Gold: {}, Items: {})",
