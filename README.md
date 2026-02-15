@@ -1,5 +1,7 @@
 # mod-dungeon-master
 
+## For the Playerbots Fork
+
 A procedural dungeon challenge system for **AzerothCore** (WotLK 3.3.5a). Built and tested on the [playerbots fork](https://github.com/liyunfan1223/azerothcore-wotlk).
 
 Players talk to a Dungeon Master NPC, pick a difficulty, creature theme, and dungeon — then get teleported into a cleared instance repopulated with level-scaled themed enemies and a boss. Kill everything to earn rewards. Roguelike mode chains dungeons together with escalating difficulty, affixes, and stacking stat buffs until the party wipes.
