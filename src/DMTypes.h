@@ -89,6 +89,8 @@ struct SpawnedCreature
     bool        IsBoss     = false;
     bool        IsRare     = false;
     bool        IsDead     = false;
+    bool        LootFilled = false;   // true once FillCreatureLoot has run post-death
+    bool        KillCredited = false; // true once kill XP/count has been awarded
 };
 
 struct PendingPhaseCheck
