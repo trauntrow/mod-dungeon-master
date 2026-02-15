@@ -143,6 +143,22 @@ DungeonMaster.Dungeon.EliteChance = 20
 #        Creatures patrol a 5 yd radius around their spawn points.
 DungeonMaster.Dungeon.AggroRadius = 15.0
 
+#    DungeonMaster.Dungeon.RareSpawnChance  (0-100)
+#        Chance for a rare enemy to spawn per dungeon run (rolled once).
+#        Rare mobs have a silver dragon portrait and enhanced loot.
+#        Default: 5
+DungeonMaster.Dungeon.RareSpawnChance = 5
+
+#    DungeonMaster.Scaling.RareHealthMult
+#        Health multiplier for rare spawns (between elite and boss).
+#        Default: 4.0
+DungeonMaster.Scaling.RareHealthMult = 4.0
+
+#    DungeonMaster.Scaling.RareDamageMult
+#        Damage multiplier for rare spawns.
+#        Default: 2.0
+DungeonMaster.Scaling.RareDamageMult = 2.0
+
 #    DungeonMaster.Dungeon.Whitelist
 #        Comma-separated map IDs (empty = all allowed)
 DungeonMaster.Dungeon.Whitelist = ""

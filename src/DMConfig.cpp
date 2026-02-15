@@ -75,9 +75,12 @@ void DMConfig::LoadConfig(bool reload)
     _epicChance   = sConfigMgr->GetOption<uint32>("DungeonMaster.Rewards.EpicChance",  15);
 
     // Dungeon settings
-    _bossCount    = sConfigMgr->GetOption<uint32>("DungeonMaster.Dungeon.BossCount",   1);
-    _eliteChance  = sConfigMgr->GetOption<uint32>("DungeonMaster.Dungeon.EliteChance", 20);
-    _aggroRadius  = sConfigMgr->GetOption<float> ("DungeonMaster.Dungeon.AggroRadius", 15.0f);
+    _bossCount       = sConfigMgr->GetOption<uint32>("DungeonMaster.Dungeon.BossCount",      1);
+    _eliteChance     = sConfigMgr->GetOption<uint32>("DungeonMaster.Dungeon.EliteChance",    20);
+    _aggroRadius     = sConfigMgr->GetOption<float> ("DungeonMaster.Dungeon.AggroRadius",    15.0f);
+    _rareSpawnChance = sConfigMgr->GetOption<uint32>("DungeonMaster.Dungeon.RareSpawnChance", 5);
+    _rareHealthMult  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.RareHealthMult",  4.0f);
+    _rareDamageMult  = sConfigMgr->GetOption<float> ("DungeonMaster.Scaling.RareDamageMult",  2.0f);
 
     // Timers
     _cooldownMinutes   = sConfigMgr->GetOption<uint32>("DungeonMaster.Cooldown.Minutes",     5);

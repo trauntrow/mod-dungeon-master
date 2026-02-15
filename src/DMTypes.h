@@ -87,6 +87,7 @@ struct SpawnedCreature
     uint32      Entry      = 0;
     bool        IsElite    = false;
     bool        IsBoss     = false;
+    bool        IsRare     = false;
     bool        IsDead     = false;
 };
 

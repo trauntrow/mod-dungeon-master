@@ -277,4 +277,41 @@ INSERT INTO `npc_vendor` (`entry`, `slot`, `item`, `maxcount`, `incrtime`, `Exte
 (500001, 0, 3827,   0, 0, 0),   -- Mana Potion
 (500001, 0, 6149,   0, 0, 0),   -- Greater Mana Potion
 (500001, 0, 13444,  0, 0, 0),   -- Major Mana Potion
-(500001, 0, 33448,  0, 0, 0);   -- Runic Mana Potion
+(500001, 0, 33448,  0, 0, 0),   -- Runic Mana Potion
+-- =========================================================================
+-- ROGUE POISONS — Instant Poison
+-- =========================================================================
+(500001, 0, 6947,   0, 0, 0),   -- Instant Poison          (lvl 20)
+(500001, 0, 6949,   0, 0, 0),   -- Instant Poison II       (lvl 28)
+(500001, 0, 6950,   0, 0, 0),   -- Instant Poison III      (lvl 36)
+(500001, 0, 8926,   0, 0, 0),   -- Instant Poison IV       (lvl 44)
+(500001, 0, 8927,   0, 0, 0),   -- Instant Poison V        (lvl 52)
+(500001, 0, 8928,   0, 0, 0),   -- Instant Poison VI       (lvl 60)
+(500001, 0, 21927,  0, 0, 0),   -- Instant Poison VII      (lvl 68)
+(500001, 0, 43230,  0, 0, 0),   -- Instant Poison VIII     (lvl 73)
+(500001, 0, 43231,  0, 0, 0),   -- Instant Poison IX       (lvl 79)
+-- =========================================================================
+-- ROGUE POISONS — Deadly Poison
+-- =========================================================================
+(500001, 0, 2892,   0, 0, 0),   -- Deadly Poison           (lvl 30)
+(500001, 0, 2893,   0, 0, 0),   -- Deadly Poison II        (lvl 38)
+(500001, 0, 8984,   0, 0, 0),   -- Deadly Poison III       (lvl 46)
+(500001, 0, 8985,   0, 0, 0),   -- Deadly Poison IV        (lvl 54)
+(500001, 0, 20844,  0, 0, 0),   -- Deadly Poison V         (lvl 60)
+(500001, 0, 22053,  0, 0, 0),   -- Deadly Poison VI        (lvl 62)
+(500001, 0, 22054,  0, 0, 0),   -- Deadly Poison VII       (lvl 70)
+(500001, 0, 43232,  0, 0, 0),   -- Deadly Poison VIII      (lvl 76)
+(500001, 0, 43233,  0, 0, 0),   -- Deadly Poison IX        (lvl 80)
+-- =========================================================================
+-- ROGUE POISONS — Utility
+-- =========================================================================
+(500001, 0, 3775,   0, 0, 0),   -- Crippling Poison        (lvl 20)
+(500001, 0, 5237,   0, 0, 0),   -- Mind-numbing Poison     (lvl 24)
+(500001, 0, 10918,  0, 0, 0),   -- Wound Poison            (lvl 32)
+(500001, 0, 10920,  0, 0, 0),   -- Wound Poison II         (lvl 40)
+(500001, 0, 10921,  0, 0, 0),   -- Wound Poison III        (lvl 48)
+(500001, 0, 10922,  0, 0, 0),   -- Wound Poison IV         (lvl 56)
+(500001, 0, 22055,  0, 0, 0),   -- Wound Poison V          (lvl 64)
+(500001, 0, 43234,  0, 0, 0),   -- Wound Poison VI         (lvl 72)
+(500001, 0, 43235,  0, 0, 0),   -- Wound Poison VII        (lvl 78)
+(500001, 0, 21835,  0, 0, 0);   -- Anesthetic Poison       (lvl 68)

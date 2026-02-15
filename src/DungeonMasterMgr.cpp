@@ -447,6 +447,8 @@ void DungeonMasterMgr::LoadRewardItems()
         "AND InventoryType NOT IN (18, 19, 24) "
         "AND class IN (2, 4) AND (Flags & 0x8) = 0 "
         "AND AllowableClass != 0 "
+        "AND RequiredReputationFaction = 0 "
+        "AND RequiredHonorRank = 0 "
         "AND name NOT LIKE '%Test%' "
         "AND name NOT LIKE '%Deprecated%' "
         "AND name NOT LIKE '%[PH]%' "
@@ -492,6 +494,8 @@ void DungeonMasterMgr::LoadLootPool()
         "AND class IN (0, 2, 4, 7, 15) "
         "AND (Flags & 0x8) = 0 "
         "AND AllowableClass != 0 "
+        "AND RequiredReputationFaction = 0 "
+        "AND RequiredHonorRank = 0 "
         "AND (RequiredLevel > 0 OR class NOT IN (2, 4)) "               // equipment must have a required level
         "AND name NOT LIKE '%Test%' "
         "AND name NOT LIKE '%Deprecated%' "
@@ -1187,10 +1191,12 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         // --- Movement ---
         if (isBoss)
         {
-            // Bosses stay at spawn — native AI handles movement and abilities
+            // Bosses stay at spawn — native AI handles movement and abilities.
+            // Do NOT call MoveIdle() here: it clears the MotionMaster stack and
+            // can override boss scripts that set up their own movement patterns
+            // during Reset() or JustEngagedWith().
             c->SetWanderDistance(0.0f);
             c->SetDefaultMovementType(IDLE_MOTION_TYPE);
-            c->GetMotionMaster()->MoveIdle();
         }
         else
         {
@@ -1261,11 +1267,6 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
 
         applyLevelAndStats(c, eliteHpMult * affixHpMult, eliteDmgMult * affixDmgMult, false);
 
-        // Red glow on affix-affected creatures so players can see they're empowered
-        if (affixHpMult > 1.0f || affixDmgMult > 1.0f)
-            if (Aura* a = c->AddAura(8599, c))
-                a->SetDuration(-1);
-
         SpawnedCreature sc;
         sc.Guid = c->GetGUID(); sc.Entry = entry;
         sc.IsElite = isElite; sc.IsBoss = false;
@@ -1273,6 +1274,79 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         ++spawnedMobs;
     }
     session->TotalMobs = spawnedMobs;
+
+    // --- Rare spawn (configurable chance, max 1 per run) ---
+    if (sDMConfig->GetRareSpawnChance() > 0 &&
+        RandInt<uint32>(1, 100) <= sDMConfig->GetRareSpawnChance())
+    {
+        // Pick non-boss spawn points for rare placement (prefer middle of dungeon)
+        std::vector<size_t> validRarePoints;
+        for (size_t i = 0; i < session->SpawnPoints.size(); ++i)
+            if (!session->SpawnPoints[i].IsBossPosition)
+                validRarePoints.push_back(i);
+
+        if (!validRarePoints.empty())
+        {
+            size_t startIdx = validRarePoints.size() / 3;
+            size_t endIdx   = std::max(startIdx, validRarePoints.size() * 2 / 3);
+            if (endIdx >= validRarePoints.size()) endIdx = validRarePoints.size() - 1;
+            size_t pickIdx  = validRarePoints[RandInt<size_t>(startIdx, endIdx)];
+            SpawnPoint& rareSP = session->SpawnPoints[pickIdx];
+
+            uint32 rareEntry = SelectCreatureForTheme(theme, true);
+            if (rareEntry)
+            {
+                Creature* r = map->SummonCreature(rareEntry, rareSP.Pos);
+                if (r)
+                {
+                    r->SetFaction(14);
+                    r->SetReactState(REACT_AGGRESSIVE);
+                    r->SetCorpseDelay(300);
+                    r->RemoveFlag(UNIT_FIELD_FLAGS, UNIT_FLAG_NON_ATTACKABLE | UNIT_FLAG_IMMUNE_TO_PC
+                                                    | UNIT_FLAG_IMMUNE_TO_NPC | UNIT_FLAG_PACIFIED
+                                                    | UNIT_FLAG_STUNNED | UNIT_FLAG_FLEEING
+                                                    | UNIT_FLAG_NOT_SELECTABLE);
+                    r->SetUInt32Value(UNIT_FIELD_FLAGS_2, 0);
+                    r->SetImmuneToPC(false);
+                    r->SetImmuneToNPC(false);
+                    r->setActive(true);
+
+                    // Silver dragon portrait (rank 4 = rare)
+                    r->SetByteValue(UNIT_FIELD_BYTES_0, 2, 4);
+                    r->SetObjectScale(1.15f);
+
+                    float rareHpMult  = sDMConfig->GetRareHealthMult();
+                    float rareDmgMult = sDMConfig->GetRareDamageMult();
+
+                    // Apply roguelike affix multipliers to rares
+                    float affixHpM = 1.0f, affixDmgM = 1.0f, affixEliteM = 1.0f;
+                    if (session->RoguelikeRunId != 0)
+                        sRoguelikeMgr->GetAffixMultipliers(session->RoguelikeRunId,
+                            false, true, affixHpM, affixDmgM, affixEliteM);
+
+                    applyLevelAndStats(r, rareHpMult * affixHpM, rareDmgMult * affixDmgM, false);
+
+                    // Install custom AI (rare is treated as enhanced trash, not a scripted boss)
+                    r->SetAI(new DungeonMasterCreatureAI(r));
+
+                    SpawnedCreature sc;
+                    sc.Guid = r->GetGUID(); sc.Entry = rareEntry;
+                    sc.IsElite = true; sc.IsBoss = false; sc.IsRare = true;
+                    session->SpawnedCreatures.push_back(sc);
+                    guidList.push_back(r->GetGUID());
+
+                    for (const auto& pd : session->Players)
+                        if (Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid))
+                            if (p->GetSession())
+                                ChatHandler(p->GetSession()).SendSysMessage(
+                                    "|cFFFFD700[Dungeon Master]|r A |cFFFF8800rare enemy|r lurks in this dungeon!");
+
+                    LOG_INFO("module", "DungeonMaster: Rare creature spawned — entry {} at ({:.1f}, {:.1f}, {:.1f})",
+                        rareEntry, rareSP.Pos.GetPositionX(), rareSP.Pos.GetPositionY(), rareSP.Pos.GetPositionZ());
+                }
+            }
+        }
+    }
 
     // Spawn bosses (real dungeon bosses)
     uint32 bossesSpawned = 0;
@@ -1309,20 +1383,47 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
             sDMConfig->GetBossHealthMult() * bossAffixHpMult,
             sDMConfig->GetBossDamageMult() * bossAffixDmgMult, true);
 
-        if (bossAffixHpMult > 1.0f || bossAffixDmgMult > 1.0f)
-            if (Aura* a = b->AddAura(8599, b))
-                a->SetDuration(-1);
-
         SpawnedCreature sc;
         sc.Guid = b->GetGUID(); sc.Entry = entry;
         sc.IsElite = true; sc.IsBoss = true;
         session->SpawnedCreatures.push_back(sc);
         ++bossesSpawned;
+
+        LOG_INFO("module", "DungeonMaster: Boss spawned — entry {}, name '{}', AIName '{}', "
+            "HasAI: {}, ReactState: {}, Level: {}",
+            b->GetEntry(), b->GetName(),
+            b->GetCreatureTemplate()->AIName,
+            b->AI() ? "yes" : "no",
+            static_cast<int>(b->GetReactState()),
+            b->GetLevel());
     }
     session->TotalBosses = bossesSpawned;
 
     LOG_INFO("module", "DungeonMaster: Session {} — {} mobs, {} bosses spawned.",
         session->SessionId, session->TotalMobs, session->TotalBosses);
+
+    // --- Reset encounter states to NOT_STARTED so boss AIs can engage properly ---
+    // We set all encounters to DONE earlier (line ~1049) to clear original dungeon
+    // bosses. Now that our custom bosses are spawned, reset encounters so their
+    // ScriptName AIs do not think the encounter is already defeated.
+    if (InstanceScript* script = map->GetInstanceScript())
+    {
+        uint32 encountersReset = 0;
+        for (uint32 i = 0; i < 25; ++i)
+        {
+            EncounterState state = script->GetBossState(i);
+            if (state == TO_BE_DECIDED)
+                break;
+            if (state == DONE)
+            {
+                script->SetBossState(i, NOT_STARTED);
+                ++encountersReset;
+            }
+        }
+        if (encountersReset > 0)
+            LOG_INFO("module", "DungeonMaster: Reset {} encounter(s) to NOT_STARTED for boss AI activation.",
+                encountersReset);
+    }
 
     // --- Spawn roguelike vendor NPC at entrance ---
     if (session->RoguelikeRunId != 0 && sDMConfig->IsRoguelikeVendorEnabled())
@@ -2003,6 +2104,51 @@ static uint32 GetClassBitmask(uint32 playerClass)
     return 1 << (playerClass - 1);
 }
 
+// Primary stat for class-based reward weighting
+// Returns: ITEM_MOD_AGILITY(3), ITEM_MOD_STRENGTH(4), ITEM_MOD_INTELLECT(5)
+static uint32 GetPrimaryStatForClass(uint32 playerClass)
+{
+    switch (playerClass)
+    {
+        case 1:  return 4;  // Warrior  -> STR
+        case 2:  return 4;  // Paladin  -> STR
+        case 3:  return 3;  // Hunter   -> AGI
+        case 4:  return 3;  // Rogue    -> AGI
+        case 5:  return 5;  // Priest   -> INT
+        case 6:  return 4;  // DK       -> STR
+        case 7:  return 5;  // Shaman   -> INT
+        case 8:  return 5;  // Mage     -> INT
+        case 9:  return 5;  // Warlock  -> INT
+        case 11: return 3;  // Druid    -> AGI
+        default: return 4;
+    }
+}
+
+// Score item stat alignment with player class (0.0 = bad, 1.0 = perfect match)
+static float ScoreItemForClass(uint32 itemEntry, uint32 playerClass)
+{
+    const ItemTemplate* proto = sObjectMgr->GetItemTemplate(itemEntry);
+    if (!proto) return 0.0f;
+
+    uint32 primaryStat = GetPrimaryStatForClass(playerClass);
+    float totalStats = 0.0f;
+    float primaryTotal = 0.0f;
+
+    for (uint8 i = 0; i < MAX_ITEM_PROTO_STATS; ++i)
+    {
+        int32 val = proto->ItemStat[i].ItemStatValue;
+        uint32 type = proto->ItemStat[i].ItemStatType;
+        if (val <= 0) continue;
+
+        totalStats += static_cast<float>(val);
+        if (type == primaryStat)
+            primaryTotal += static_cast<float>(val);
+    }
+
+    if (totalStats <= 0.0f) return 0.5f;  // No stats (trinket, etc.) = neutral
+    return primaryTotal / totalStats;
+}
+
 uint32 DungeonMasterMgr::SelectRewardItem(uint8 level, uint8 quality, uint32 playerClass)
 {
     uint8  maxArmor   = GetMaxArmorSubclass(playerClass);
@@ -2049,6 +2195,24 @@ uint32 DungeonMasterMgr::SelectRewardItem(uint8 level, uint8 quality, uint32 pla
             LOG_INFO("module", "DungeonMaster: SelectRewardItem(level={}, quality={}, class={}) "
                 "-> {} candidates in window [{}, {}]",
                 level, quality, playerClass, cands.size(), lo, hi);
+
+            // 75% chance: bias toward items with matching primary stat
+            if (cands.size() > 3 && playerClass > 0 && RandInt<uint32>(1, 100) <= 75)
+            {
+                std::vector<std::pair<uint32, float>> scored;
+                scored.reserve(cands.size());
+                for (uint32 entry : cands)
+                    scored.push_back({entry, ScoreItemForClass(entry, playerClass)});
+
+                std::sort(scored.begin(), scored.end(),
+                    [](const auto& a, const auto& b) { return a.second > b.second; });
+
+                // Pick from the top third (at least 3 items)
+                size_t topN = std::max<size_t>(3, scored.size() / 3);
+                return scored[RandInt<size_t>(0, topN - 1)].first;
+            }
+
+            // 25% chance: purely random from valid pool
             return cands[RandInt<size_t>(0, cands.size() - 1)];
         }
     }
@@ -2120,6 +2284,23 @@ uint32 DungeonMasterMgr::SelectLootItem(uint8 level, uint8 minQuality, uint8 max
             LOG_INFO("module", "DungeonMaster: SelectLootItem(level={}, quality={}-{}, eqOnly={}, class={}) "
                 "-> {} candidates in window [{}, {}]",
                 level, minQuality, maxQuality, equipmentOnly, playerClass, cands.size(), lo, hi);
+
+            // Bias equipment loot toward matching primary stat (75% chance)
+            if (equipmentOnly && playerClass > 0 && cands.size() > 3
+                && RandInt<uint32>(1, 100) <= 75)
+            {
+                std::vector<std::pair<uint32, float>> scored;
+                scored.reserve(cands.size());
+                for (uint32 entry : cands)
+                    scored.push_back({entry, ScoreItemForClass(entry, playerClass)});
+
+                std::sort(scored.begin(), scored.end(),
+                    [](const auto& a, const auto& b) { return a.second > b.second; });
+
+                size_t topN = std::max<size_t>(3, scored.size() / 3);
+                return scored[RandInt<size_t>(0, topN - 1)].first;
+            }
+
             return cands[RandInt<size_t>(0, cands.size() - 1)];
         }
     }
@@ -2201,10 +2382,24 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
     else
     {
         bool isElite = false;
+        bool isRare  = false;
         for (const auto& sc : session->SpawnedCreatures)
-            if (sc.Guid == creature->GetGUID() && sc.IsElite) { isElite = true; break; }
+        {
+            if (sc.Guid == creature->GetGUID())
+            {
+                isElite = sc.IsElite;
+                isRare  = sc.IsRare;
+                break;
+            }
+        }
 
-        if (isElite)
+        if (isRare)
+        {
+            // Rare spawn: guaranteed blue equipment piece
+            if (!addItem(3, 3, true))
+                addItem(2, 3, true);
+        }
+        else if (isElite)
         {
             // Elite: 40% chance of green equipment
             if (RandInt<uint32>(1, 100) <= 40)
@@ -2245,8 +2440,10 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
 
     if (group && looter)
     {
-        // Set the loot owner so the group system can process it
-        creature->SetLootRecipient(looter);
+        // Set both individual and group loot recipient — the 'true' flag ensures
+        // the group is registered as the loot recipient, which is required for
+        // Playerbots to receive SMSG_LOOT_ROLL packets and participate in rolls.
+        creature->SetLootRecipient(looter, true);
 
         // Mark items above the group's loot threshold for rolling;
         // items below threshold become free-for-all (direct loot)
@@ -2262,8 +2459,22 @@ void DungeonMasterMgr::FillCreatureLoot(Creature* creature, Session* session, bo
         // to all eligible group members for qualifying items
         group->GroupLoot(&loot, creature);
 
-        LOG_INFO("module", "DungeonMaster: Group loot triggered for {} — {} items eligible for rolls",
-            creature->GetName(), loot.items.size());
+        // Force dynamic flag update to all session players so bots see the lootable corpse
+        for (const auto& pd : session->Players)
+        {
+            Player* p = ObjectAccessor::FindPlayer(pd.PlayerGuid);
+            if (p && p->IsInWorld() && p->GetMapId() == session->MapId)
+                creature->SendUpdateToPlayer(p);
+        }
+
+        LOG_INFO("module", "DungeonMaster: Group loot triggered for {} — {} items, "
+            "lootMethod={}, threshold={}, groupSize={}",
+            creature->GetName(), loot.items.size(),
+            static_cast<int>(group->GetLootMethod()), threshold, group->GetMembersCount());
+    }
+    else if (looter)
+    {
+        creature->SetLootRecipient(looter);
     }
     
     LOG_INFO("module", "DungeonMaster: FillCreatureLoot complete for {} (GUID: {}, Boss: {}, Level: {}, Gold: {}, Items: {})",

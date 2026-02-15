@@ -69,6 +69,9 @@ public:
     uint32 GetBossCount()       const { return _bossCount; }
     uint32 GetEliteChance()     const { return _eliteChance; }
     float  GetAggroRadius()     const { return _aggroRadius; }
+    uint32 GetRareSpawnChance() const { return _rareSpawnChance; }
+    float  GetRareHealthMult()  const { return _rareHealthMult; }
+    float  GetRareDamageMult()  const { return _rareDamageMult; }
 
     // --- Timers ---
     uint32 GetCooldownMinutes()   const { return _cooldownMinutes; }
@@ -138,9 +141,12 @@ private:
     uint32 _epicChance  = 15;
 
     // Dungeon
-    uint32 _bossCount    = 1;
-    uint32 _eliteChance  = 20;
-    float  _aggroRadius  = 15.0f;
+    uint32 _bossCount       = 1;
+    uint32 _eliteChance     = 20;
+    float  _aggroRadius     = 15.0f;
+    uint32 _rareSpawnChance = 5;
+    float  _rareHealthMult  = 4.0f;
+    float  _rareDamageMult  = 2.0f;
 
     // Timers
     uint32 _cooldownMinutes   = 5;
