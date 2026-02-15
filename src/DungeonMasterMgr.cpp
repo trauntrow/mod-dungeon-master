@@ -1389,10 +1389,10 @@ void DungeonMasterMgr::PopulateDungeon(Session* session, InstanceMap* map)
         session->SpawnedCreatures.push_back(sc);
         ++bossesSpawned;
 
-        LOG_INFO("module", "DungeonMaster: Boss spawned — entry {}, name '{}', ScriptName '{}', "
+        LOG_INFO("module", "DungeonMaster: Boss spawned — entry {}, name '{}', AIName '{}', "
             "HasAI: {}, ReactState: {}, Level: {}",
             b->GetEntry(), b->GetName(),
-            b->GetCreatureTemplate()->ScriptName,
+            b->GetCreatureTemplate()->AIName,
             b->AI() ? "yes" : "no",
             static_cast<int>(b->GetReactState()),
             b->GetLevel());
