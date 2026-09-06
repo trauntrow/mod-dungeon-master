@@ -3529,6 +3529,12 @@ void DungeonMasterMgr::Update(uint32 diff)
                     if (m && m->IsDungeon())
                     {
                         uint32 npcEntry = sDMConfig->GetNpcEntry();
+
+                        // Collect matches first: DespawnOrUnsummon() mutates the map's
+                        // creature-by-spawnId container, so we must not call it while
+                        // still holding a live iterator over that same container
+                        // (was causing use-after-free segfaults on the next iteration).
+                        std::vector<Creature*> strays;
                         auto const& dbStore = static_cast<InstanceMap*>(m)->GetCreatureBySpawnIdStore();
                         for (auto const& pair : dbStore)
                         {
@@ -3538,9 +3544,14 @@ void DungeonMasterMgr::Update(uint32 diff)
                                 && !stray->IsPet() && !stray->IsGuardian() && !stray->IsTotem()
                                 && ourGuids.count(stray->GetGUID()) == 0)
                             {
-                                stray->SetRespawnTime(7 * DAY);
-                                stray->DespawnOrUnsummon();
+                                strays.push_back(stray);
                             }
+                        }
+
+                        for (Creature* stray : strays)
+                        {
+                            stray->SetRespawnTime(7 * DAY);
+                            stray->DespawnOrUnsummon();
                         }
                     }
                 }
